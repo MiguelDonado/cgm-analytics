@@ -1,0 +1,18 @@
+[project]
+name = "cgm-analytics"
+version = "0.1.0"
+description = "Fetch and analyze FreeStyle Libre CGM glucose readings via the LibreLinkUp API"
+readme = "README.md"
+authors = [
+    { name = "MiguelDonado", email = "miguel.5799@hotmail.es" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pylibrelinkup>=0.11.1",
+    "python-dotenv>=1.2.4",
+    "requests>=2.32",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
