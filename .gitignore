@@ -20,3 +20,4 @@ airflow.cfg
 airflow.db
 logs/
 .Rproj.user
+.Renviron

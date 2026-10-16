@@ -19,6 +19,7 @@ overlapping runs never create duplicates.
 Readings are stored in the glucose_readings table of cgm-db.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
@@ -36,7 +37,12 @@ SQL_DIR = Path("/usr/local/airflow/include/sql")
     start_date=datetime(2026, 10, 16),
     schedule="@hourly",
     catchup=False,
-    default_args={"retries": 3},
+    default_args={
+    "retries": 3,
+    "retry_delay": timedelta(minutes=2),          # first wait
+    "retry_exponential_backoff": True,            # double the wait each time
+    "max_retry_delay": timedelta(minutes=30),     # upper limit for any single wait
+    },
     tags=["cgm"],
     # Folder where Airflow looks for .sql files. With sql="create_glucose_readings.sql",
     # Airflow treats the value as a file name, not SQL, and by default only searches

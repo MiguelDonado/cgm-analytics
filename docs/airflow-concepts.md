@@ -98,3 +98,36 @@ fetch_readings → raw_glucose_responses   (API JSON as-is, one row per run)
 This is a common pattern (raw/staging, or bronze/silver layers). The risk is
 small here, since `glucose_readings` already stores nearly every field, so it's
 an option to keep in mind rather than something needed now.
+
+## Retries: fixed vs. exponential backoff
+
+With only `retries` set, Airflow waits a **fixed** `retry_delay` (default 5
+minutes) between attempts; `retry_exponential_backoff` is `False` by default.
+
+`fetch_glucose` uses exponential backoff:
+
+```python
+default_args={
+    "retries": 3,
+    "retry_delay": timedelta(minutes=2),          # first wait
+    "retry_exponential_backoff": True,            # double the wait each time
+    "max_retry_delay": timedelta(minutes=30),     # upper limit for any single wait
+}
+```
+
+The wait roughly doubles each time (~2, 4, 8 minutes), plus a little randomness
+so failing tasks don't all retry at the same instant. `max_retry_delay` caps a
+single wait if `retries` is raised later. All retries finish within ~15
+minutes, well before the next hourly run.
+
+**Why exponential:**
+
+- The likely failures come from an external API: temporary overload or rate
+  limiting (HTTP 430). Retrying quickly just gets rejected again; waiting longer
+  each time gives the API time to recover.
+- It costs nothing at this scale, and it's the standard pattern for anything
+  that calls an external API.
+
+**Why not more retries:** the next hourly run fetches the same ~12-hour window
+anyway, so no data is lost if all retries fail. More retries would only mean
+more calls to an API that's already failing.
