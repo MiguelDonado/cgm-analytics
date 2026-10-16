@@ -20,6 +20,44 @@ triggerer). No Astronomer account is needed.
 | `.dockerignore` | Files that are **not** copied into the image (`.env`, `.venv`, `.git`, ...). |
 | `tests/dags/test_dag_example.py` | Checks that every DAG imports without errors, has tags and has retries set. |
 
+### What goes in `include/`
+
+`include/` holds **files the DAGs use that aren't DAGs themselves**. Airflow only
+looks for DAG definitions in `dags/`; everything the DAGs *need* goes in
+`include/`.
+
+| What | Example | Why it goes there |
+|---|---|---|
+| **SQL files** | `include/sql/create_glucose_readings.sql` | Keeps long SQL out of Python, with syntax highlighting, and it can be run in psql too. The most common use. |
+| **Config files** | `include/config/thresholds.yaml` | Settings the DAGs read (target ranges, lists of things to process). |
+| **Templates** | `include/templates/report.html` | Jinja templates for emails or reports. |
+| **Small static data** | `include/data/seed.csv` | Reference or lookup tables, test fixtures. |
+| **External tool projects** | `include/dbt/` | E.g. a dbt project run from Airflow (common with the Cosmos library). |
+| **Helper Python modules** | `include/utils.py` | Imported as `from include.utils import ...`; works because `/usr/local/airflow` is on `PYTHONPATH` in the image. |
+
+What doesn't belong there:
+
+- **Secrets:** `include/` is copied into the image and committed to git. Use
+  `.env` or Airflow connections.
+- **Large data or outputs:** those belong in the database or object storage.
+
+`include/` is mounted live like `dags/`, so editing a SQL file there takes effect
+on the next task run, without `astro dev restart`.
+
+### How this project splits code
+
+This project already has a better home for Python logic, so `include/` won't
+need helper modules:
+
+```
+src/cgm_analytics/   Python business logic (fetching, transforming). Works without
+                     Airflow, installed as a package, testable on its own.
+dags/                Thin DAGs: scheduling and wiring tasks together, calling into
+                     cgm_analytics.
+include/             Non-Python assets the DAGs use: SQL files now, maybe configs
+                     or dbt later.
+```
+
 ## How the project gets into the containers
 
 `/usr/local/airflow` is a path **inside the Docker image**, not on the host. It is
@@ -181,19 +219,60 @@ volumes:
 ```
 
 - `networks: - airflow` puts the container on the same network as Airflow.
-  Without it, Airflow can't reach it. Check the network name in the exported
-  Compose file.
+  Without it, Airflow can't reach it. Compose prefixes the name with the project,
+  so the real network is `cgm-analytics_121cb8_airflow`
+  (`docker network ls | grep cgm-analytics`).
 - `postgres:17` is pinned on purpose: Postgres 18 moved the data directory, which
   breaks this volume path.
 
-Airflow connects to it through a connection defined in `.env`:
+Each setting is explained in the comments of `docker-compose.override.yml`.
+
+### Airflow connection to `cgm-db`
+
+The DAGs need to know where the database is and how to log in. Instead of
+hardcoding that in the code, Airflow uses **connections**: named sets of
+credentials stored outside the code. A DAG only refers to the connection's ID:
+
+```python
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+
+hook = PostgresHook(postgres_conn_id="cgm_db")
+```
+
+The hook looks up `cgm_db`, reads host, port, user and password, and opens the
+connection.
+
+`PostgresHook` comes from the Postgres provider, which isn't in the Astro Runtime
+image. It's listed in `requirements.txt`
+
+#### Defined as an environment variable in `.env`
+
+Connections can live in the UI (metadata database), in `airflow_settings.yaml`,
+or in environment variables. Airflow treats any variable named
+`AIRFLOW_CONN_<CONNECTION_ID in uppercase>` as a connection:
 
 ```
 AIRFLOW_CONN_CGM_DB='postgresql://cgm:cgm@cgm-db:5432/cgm'
 ```
 
-- From inside the containers, the host is the service name `cgm-db`, port `5432`.
-- From the host machine (psql, DBeaver), it's `localhost:5433`.
+defines the connection `cgm_db`. It goes in `.env` because the Astro CLI passes
+`.env` to every container, it's gitignored (the password stays out of git), it
+survives `astro dev kill` (UI-created connections don't)- Connections defined this way don't show up in the UI's connection list; that's normal.
+
+#### What the URI means
+
+```
+postgresql://cgm:cgm@cgm-db:5432/cgm
+│            │   │   │      │    │
+│            │   │   │      │    └─ database name   (POSTGRES_DB)
+│            │   │   │      └────── port            (inside the Docker network)
+│            │   │   └───────────── host            (service name in the override file)
+│            │   └───────────────── password        (POSTGRES_PASSWORD)
+│            └───────────────────── user            (POSTGRES_USER)
+└────────────────────────────────── connection type (tells Airflow it's Postgres)
+```
+
+
 
 Run `astro dev restart` after creating or changing the override file. The same
 service block can go into a plain `docker-compose.yml` when running on the

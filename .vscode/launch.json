@@ -9,7 +9,7 @@
             "name": "Debug main.py",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/cgm_pipeline/main.py",
+            "program": "${workspaceFolder}/src/cgm_analytics/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
         }

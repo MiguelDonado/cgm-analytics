@@ -1,1 +1,16 @@
 # Astro Runtime includes the following pre-installed providers packages: https://www.astronomer.io/docs/astro/runtime-image-architecture#provider-packages
+#
+# Airflow-specific packages that only the Docker image needs (e.g. providers).
+# Installed by the base image's ONBUILD steps, keeping the versions of the
+# Airflow packages already in the image, so they don't break Airflow.
+#
+# The cgm_analytics dependencies (pylibrelinkup, ...) go in pyproject.toml
+# instead: they work without Airflow. 
+#
+# Rebuild the image after changing this file: `astro dev restart`.
+
+# A good rule of thumb:
+# - pyproject.toml is for your business logic (cgm_analytics): things that work without Airflow, like pylibrelinkup.
+# - requirements.txt is for Airflow-specific packages that only the image needs (providers).
+
+apache-airflow-providers-postgres
