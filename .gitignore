@@ -12,3 +12,10 @@ wheels/
 
 # Environment variables
 .env
+
+# Astro / Airflow
+.astro/
+airflow_settings.yaml
+airflow.cfg
+airflow.db
+logs/

@@ -1,0 +1,21 @@
+# Files and folders NOT copied into the Docker image.
+#
+# When the image is built, the Astro Runtime base image runs `COPY . .`, which
+# copies the whole project into /usr/local/airflow inside the image. Everything
+# listed here is skipped, which:
+#   - keeps secrets out of the image (.env is passed to the containers at
+#     runtime by the Astro CLI instead)
+#   - keeps the image small (no .venv, .git or caches)
+#   - avoids needless rebuilds when only local files change (logs, editor settings)
+
+astro
+.git
+.env
+airflow_settings.yaml
+logs/
+.venv
+airflow.db
+airflow.cfg
+__pycache__/
+.ruff_cache/
+.vscode/

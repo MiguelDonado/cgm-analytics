@@ -1,0 +1,256 @@
+# Airflow setup (Astro CLI)
+
+Airflow runs locally with the [Astro CLI](https://www.astronomer.io/docs/astro/cli/overview).
+`astro dev init` created the project scaffolding, and `astro dev start` builds the
+image and starts the containers (Postgres, scheduler, DAG processor, API server,
+triggerer). No Astronomer account is needed.
+
+## Project files created by `astro dev init`
+
+| File/folder | Purpose |
+|---|---|
+| `Dockerfile` | Builds the Airflow image. Based on Astro Runtime, which copies the project into the image and installs `packages.txt` and `requirements.txt` (see below). |
+| `dags/` | The DAGs. Mounted into the containers, so edits show up without a rebuild. |
+| `include/` | Extra files used by the DAGs (SQL, configs). Also mounted. |
+| `plugins/` | Custom Airflow plugins. |
+| `requirements.txt` | Extra Python packages. Kept empty: dependencies come from `pyproject.toml`. |
+| `packages.txt` | System (apt) packages. Kept empty. |
+| `airflow_settings.yaml` | Connections and variables for local development only. Not committed (may contain secrets). |
+| `.astro/` | Astro CLI config and the built-in DAG integrity test. Not committed. |
+| `.dockerignore` | Files that are **not** copied into the image (`.env`, `.venv`, `.git`, ...). |
+| `tests/dags/test_dag_example.py` | Checks that every DAG imports without errors, has tags and has retries set. |
+
+## How the project gets into the containers
+
+`/usr/local/airflow` is a path **inside the Docker image**, not on the host. It is
+Airflow's home directory (`AIRFLOW_HOME`) and the image's working directory.
+
+### At build time: copied into the image
+
+The Astro Runtime base image has `ONBUILD` instructions. They run when *our*
+`Dockerfile` builds `FROM` it, so our short `Dockerfile` effectively becomes:
+
+```dockerfile
+FROM astrocrpublic.azurecr.io/runtime:3.3-9
+# --- hidden ONBUILD steps from the base image ---
+COPY packages.txt .        # then apt-get install the listed packages
+COPY requirements.txt .    # then pip install the listed packages
+COPY . .                   # whole project -> /usr/local/airflow (minus .dockerignore)
+# --- our own line ---
+RUN pip install --no-cache-dir /usr/local/airflow
+```
+
+So the whole project (except what `.dockerignore` excludes) is **copied into the
+image** at `/usr/local/airflow`. Our `RUN pip install` line then installs the
+`cgm_analytics` package from `src/`, with the dependencies listed in
+`pyproject.toml`.
+
+Why `pip install <folder>`:
+
+- `pyproject.toml` stays the single source of truth for dependencies. After
+  `uv add <package>`, the next image build installs it; there's no need to also
+  list it in `requirements.txt`.
+- The `src/` layout is kept. The alternative, copying the code into `include/`
+  and adjusting import paths, is messy.
+- Packages already in the image that satisfy our requirements (e.g. `requests`)
+  are left alone, so Airflow's own versions don't change.
+
+### What "building" the package means
+
+After `pip install`, our code is an installed library, just like `pylibrelinkup`
+or `requests`:
+
+1. **Build:** pip uses the build backend set in `pyproject.toml` (`uv_build`) to
+   package `src/cgm_analytics/` into a **wheel** (`cgm_analytics-0.1.0-py3-none-any.whl`),
+   the standard file format for distributing Python libraries.
+2. **Install:** pip unpacks the wheel into the image's **site-packages**, the
+   folder where Python looks for installed libraries
+   (`/home/astro/.local/lib/python3.14/site-packages/cgm_analytics/`, next to
+   `pylibrelinkup`).
+
+So:
+
+- Any code in the containers can `import cgm_analytics`, from any folder, with no
+  path tricks. The DAGs don't need to know where `src/` is.
+- `pip show cgm-analytics` and `pip list` show it like any other package (version
+  `0.1.0`, from `pyproject.toml`).
+- It's a **copy**: a snapshot of `src/` taken at build time. The containers import
+  that copy, not the files in the repo, which is why changes to `src/` need
+  `astro dev restart`.
+
+### At runtime: some folders are mounted on top
+
+Every container starts from that image. `astro dev` also mounts these local
+folders over the copies baked into the image:
+
+```
+host (this repo)    inside each container
+dags/        ──▶    /usr/local/airflow/dags/
+include/     ──▶    /usr/local/airflow/include/
+plugins/     ──▶    /usr/local/airflow/plugins/
+tests/       ──▶    /usr/local/airflow/tests/
+```
+
+> **Remember:** changes in `dags/` and `include/` are picked up live, but `src/`
+> is not mounted. The `cgm_analytics` package was installed into the image at
+> build time, so after changing code in `src/` (or `pyproject.toml`,
+> `Dockerfile`, `requirements.txt`, `packages.txt`), rebuild with
+> `astro dev restart`. Otherwise the containers keep running the old code.
+
+To look inside a running container:
+
+```bash
+astro dev bash              # shell in the scheduler container
+ls -la /usr/local/airflow
+pip show cgm-analytics      # confirms the package is installed
+```
+
+## Docker Compose: how `astro dev start` runs the containers
+
+There is no `docker-compose.yaml` in this repo, but Docker Compose is still used.
+The Astro CLI generates the Compose configuration internally from a template
+built into the CLI. `astro dev start`:
+
+1. **Builds the image** from our `Dockerfile` (see above).
+2. **Generates the Compose configuration** and runs it with Docker Compose.
+3. **Starts the containers** (see the table below).
+4. **Mounts** `dags/`, `include/`, `plugins/` and `tests/` into the containers.
+5. **Loads `.env`** as environment variables in every container, plus the
+   connections and variables in `airflow_settings.yaml`.
+
+It uses the **LocalExecutor**: tasks run inside the scheduler container, so there
+are no Celery workers and no Redis. That is lighter than the `docker-compose.yaml`
+from the official Airflow docs, which uses the CeleryExecutor.
+
+To see the generated Compose file (Airflow must be running):
+
+```bash
+astro dev object export --compose --compose-file compose.yaml
+```
+
+### Containers and images
+
+| Container | Image | Command it runs |
+|---|---|---|
+| `scheduler` | **our image** (built from `Dockerfile`) | `airflow scheduler` (also runs the tasks, LocalExecutor) |
+| `dag-processor` | **our image** | `airflow dag-processor` (parses DAG files, separate service since Airflow 3) |
+| `api-server` | **our image** | `airflow api-server` (UI + REST API on http://localhost:8080) |
+| `triggerer` | **our image** | `airflow triggerer` (for deferrable tasks) |
+| `postgres` | a standard Postgres image | Airflow's metadata database (DAG runs, task states, connections, ...) |
+
+**Why the four Airflow containers share one image:** they are the same Airflow
+installation, each started with a different command. All of them need the DAGs,
+the `cgm_analytics` package and the same dependencies, because the DAG processor
+parses the DAG files and the tasks run in the scheduler. Building one image keeps
+them identical.
+
+**Why Postgres is separate:** it doesn't need Airflow or our code. It's just a
+database server, so it uses a plain Postgres image. The Airflow containers reach
+it over the Docker network that Compose creates.
+
+To check:
+
+```bash
+astro dev ps
+docker ps --format 'table {{.Names}}\t{{.Image}}'
+```
+
+### Adding containers: `docker-compose.override.yml`
+
+To add a service (e.g. a separate Postgres database for the glucose data), create
+`docker-compose.override.yml` in the project root. `astro dev start` merges it
+into the generated Compose configuration:
+
+```yaml
+services:
+  cgm-db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: cgm
+      POSTGRES_PASSWORD: cgm
+      POSTGRES_DB: cgm
+    ports:
+      - "5433:5432"          # 5432 on the host is taken by Airflow's own Postgres
+    volumes:
+      - cgm_db_data:/var/lib/postgresql/data   # keeps data across restarts
+    networks:
+      - airflow              # Astro's network, so Airflow can reach it
+
+volumes:
+  cgm_db_data:
+```
+
+- `networks: - airflow` puts the container on the same network as Airflow.
+  Without it, Airflow can't reach it. Check the network name in the exported
+  Compose file.
+- `postgres:17` is pinned on purpose: Postgres 18 moved the data directory, which
+  breaks this volume path.
+
+Airflow connects to it through a connection defined in `.env`:
+
+```
+AIRFLOW_CONN_CGM_DB='postgresql://cgm:cgm@cgm-db:5432/cgm'
+```
+
+- From inside the containers, the host is the service name `cgm-db`, port `5432`.
+- From the host machine (psql, DBeaver), it's `localhost:5433`.
+
+Run `astro dev restart` after creating or changing the override file. The same
+service block can go into a plain `docker-compose.yml` when running on the
+Raspberry Pi, so it isn't Astro-specific.
+
+## Running Airflow
+
+### Start it and test the DAG
+
+```bash
+astro dev start
+```
+
+The first run builds the image (slow; later builds reuse the cached layers) and
+starts the containers. Then:
+
+1. Open http://localhost:8080.
+2. Find `fetch_glucose`, switch it on and click **Trigger**.
+3. Open the run, click the `fetch_readings` task and go to **Logs**. It should show
+   "Authentication successful." followed by the readings.
+
+If the DAG doesn't show up in the UI, it probably failed to import. Check the
+scheduler/DAG processor logs or run the tests (below).
+
+### Useful commands
+
+```bash
+astro dev ps          # list running containers
+astro dev logs -s     # scheduler logs (DAG import errors show here)
+astro dev pytest      # run tests/ inside the container
+astro dev bash        # shell inside the scheduler container
+astro dev restart     # rebuild the image after changing src/, Dockerfile, requirements
+astro dev stop        # stop the containers (data is kept)
+astro dev kill        # remove containers AND volumes (data is deleted)
+```
+
+### Stop, restart, kill: what happens to the data
+
+"Data" here is Airflow's **metadata database** (the `postgres` container): the
+history of DAG and task runs, which DAGs are on or paused, connections and
+variables created in the UI, and XComs.
+
+Postgres keeps its files in a **Docker volume**, storage that Docker manages
+separately from the container. Stopping a container doesn't touch its volume.
+
+| Command | Containers | Metadata DB (volume) |
+|---|---|---|
+| `astro dev stop` | stopped | **kept** |
+| `astro dev restart` | rebuilt and restarted | **kept** |
+| `astro dev kill` | removed | **deleted** |
+
+`astro dev kill` gives a fresh, empty Airflow: no run history, all DAGs paused.
+Connections defined in `.env` or `airflow_settings.yaml` come back on the next
+start, because they are loaded from files.
+
+> **Warning:** volumes declared in `docker-compose.override.yml` (e.g.
+> `cgm_db_data` for `cgm-db`) belong to the same Compose project, so
+> `astro dev kill` will most likely delete them too, **including the stored
+> glucose readings**. Once there is real data, use `stop`/`restart` day to day
+> and back up (e.g. `pg_dump`) before any `kill`.
