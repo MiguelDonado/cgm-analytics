@@ -1,8 +1,10 @@
 """Fetch FreeStyle Libre glucose readings from the LibreLinkUp API.
 
-Logs in to LibreLinkUp with the credentials in ``.env`` (``LIBRELINK_EMAIL`` and
-``LIBRELINK_PASSWORD``), takes the first patient on the account (myself) and
-prints the last ~12 hours of glucose readings, one every ~15 minutes.
+Run as a script, it logs in to LibreLinkUp with the credentials of the
+``librelinkup`` Airflow connection (``AIRFLOW_CONN_LIBRELINKUP`` in ``.env``, JSON
+with ``login`` and ``password``), the same ones the ``fetch_glucose`` DAG uses,
+takes the first patient on the account (myself) and prints the last ~12 hours of
+glucose readings, one every ~15 minutes.
 
 Regional servers
 ----------------
@@ -40,6 +42,7 @@ Note: this API is unofficial and undocumented; it was worked out from how the
 LibreLinkUp app behaves.
 """
 
+import json
 import os
 
 import requests
@@ -114,7 +117,9 @@ def fetch_recent_readings(client: PyLibreLinkUp, patient: Patient) -> list[Gluco
 
 if __name__ == "__main__":
     load_dotenv()
-    client = initialize_client(os.environ["LIBRELINK_EMAIL"], os.environ["LIBRELINK_PASSWORD"])
+    # Same credentials Airflow uses: the `librelinkup` connection, stored as JSON in .env.
+    credentials = json.loads(os.environ["AIRFLOW_CONN_LIBRELINKUP"])
+    client = initialize_client(credentials["login"], credentials["password"])
     my_patient = get_my_patient(client)
     for reading in fetch_recent_readings(client, my_patient):
         print(reading)

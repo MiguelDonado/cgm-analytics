@@ -62,3 +62,39 @@ Neither `SQLExecuteQueryOperator(...)` nor calling `fetch_readings()` inside the
 DAG function executes anything when the DAG file is parsed. They only declare
 "this task exists, with this configuration". The SQL and the function body run
 later, when the scheduler runs the task.
+
+## Passing data between tasks: XCom vs. external storage
+
+Each task runs as a separate process, so data passes between tasks as an
+**XCom**: the return value of one task, stored in Airflow's metadata database
+and read back by the next task.
+
+**XCom is for small values**: IDs, counts, file paths, at most a few hundred
+rows. `fetch_glucose` passes ~48 small dicts per run (a few KB), which is exactly
+the intended use.
+
+**External storage** (write the data to a database or object storage, and pass
+only a reference through XCom) is better when:
+
+- the data is big: large XComs slow down and bloat the metadata database, which
+  every Airflow component depends on;
+- several tasks or DAGs need the same intermediate data;
+- the intermediate data should be kept after the run, for auditing or
+  reprocessing.
+
+**Decision:** keep XCom. A staging table just to replace it would add complexity
+with no benefit at this data size.
+
+**Possible future improvement: a raw layer.** The pipeline goes API → parse →
+table. If a parsing mistake were found later, old readings couldn't be re-derived:
+the API only goes back 14 days and there's no backfill (see
+`docs/data-model.md`). Storing the API's JSON as-is before parsing would fix that:
+
+```
+fetch_readings → raw_glucose_responses   (API JSON as-is, one row per run)
+              → glucose_readings        (parsed, upserted, used by the analytics)
+```
+
+This is a common pattern (raw/staging, or bronze/silver layers). The risk is
+small here, since `glucose_readings` already stores nearly every field, so it's
+an option to keep in mind rather than something needed now.

@@ -19,3 +19,4 @@ airflow.cfg
 __pycache__/
 .ruff_cache/
 .vscode/
+dashboard/

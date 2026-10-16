@@ -19,3 +19,4 @@ airflow_settings.yaml
 airflow.cfg
 airflow.db
 logs/
+.Rproj.user

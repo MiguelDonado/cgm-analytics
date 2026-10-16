@@ -58,3 +58,12 @@ never skips. So `factory_timestamp` is unique per reading.
 To check it on real data: for any reading, `factory_timestamp` and `timestamp`
 differ by exactly the local UTC offset (in Spain: 2 hours in summer time,
 1 hour in winter time).
+
+## No backfill of historical data
+
+The table only holds readings from the moment the pipeline started running
+(October 2026) onwards; older history is deliberately not loaded. The project
+only cares about data from now on, and the LibreLinkUp API couldn't provide it
+anyway: it doesn't return data older than 14 days, so a full history isn't
+available from this source. That's also why the DAG uses `catchup=False`:
+past runs would fetch the same recent window as a new run, not older data.

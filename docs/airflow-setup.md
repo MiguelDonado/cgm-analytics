@@ -278,6 +278,76 @@ Run `astro dev restart` after creating or changing the override file. The same
 service block can go into a plain `docker-compose.yml` when running on the
 Raspberry Pi, so it isn't Astro-specific.
 
+### Airflow connection to LibreLinkUp
+
+The LibreLinkUp credentials are also an Airflow connection, `librelinkup`,
+instead of plain environment variables read with `os.environ`.
+
+#### Why a connection instead of `os.environ`
+
+- **Masking in logs:** Airflow automatically hides connection passwords in task
+  logs. A value read directly from `os.environ` isn't registered as a secret, so
+  if it's ever printed or appears in an error, it shows in plain text.
+- **One mechanism for all secrets:** the database and the API credentials work
+  the same way.
+- **Storage can change without code changes:** connections can come from
+  environment variables, the metadata database or a secrets backend (HashiCorp
+  Vault, AWS Secrets Manager, ...). The DAG only knows the ID `librelinkup`.
+
+`.env` doesn't go away: the connection is **how the code reads** the secret,
+`.env` is still **where the value is stored**.
+
+#### How log masking works
+
+Airflow never writes `.env` or the environment variables to the logs on its own.
+Masking is about what happens **if the code ever outputs a password**.
+
+Airflow's **secrets masker** keeps a list of values known to be secrets and,
+before writing any line to a task log, replaces them with `***`. Reading a
+connection with `BaseHook.get_connection(...)` registers its password on that
+list. A value read with `os.environ[...]` is just a Python string: Airflow
+doesn't know it's a password, so it's never registered.
+
+It makes a difference when the password ends up in a log by accident: a debug
+`print`, an error message that includes it, or a library logging its requests:
+
+```
+password from the connection:  INFO - Logging in with password ***
+password from os.environ:      INFO - Logging in with password MyRealPassword123
+```
+
+- Nothing leaks today: the code doesn't print the password. Masking is a
+  **safety net** for mistakes, not a fix for a current problem.
+- Only the **password** is masked, not the login (the email would still show).
+- Values shorter than 5 characters aren't masked (that's the "Skipping masking
+  for a secret as it's too short" warning for the `cgm` database password):
+  masking every "cgm" would garble the logs.
+
+#### Defined in `.env`, in JSON format
+
+```
+AIRFLOW_CONN_LIBRELINKUP='{"conn_type": "generic", "login": "you@example.com", "password": "your-password"}'
+```
+
+- `AIRFLOW_CONN_LIBRELINKUP` defines the connection `librelinkup`, like
+  `AIRFLOW_CONN_CGM_DB` does for `cgm_db`.
+- **JSON instead of a URI:** the login is an email, and the URI format uses `@`
+  as a separator, so it would have to be written `you%40example.com`, plus any
+  special characters in the password encoded. JSON has named fields, so values
+  go in as they are (tested: `@ : / #` are read correctly).
+- `"conn_type": "generic"` is Airflow's type for "just credentials", used when
+  there's no dedicated provider. LibreLinkUp has none, and `pylibrelinkup`
+  handles the URLs itself, so no `host` is needed.
+- The single quotes `'...'` keep the whole JSON as one value (it contains spaces
+  and double quotes).
+
+`.env` is only read when the containers start, so apply changes with
+`astro dev restart`, then check:
+
+```bash
+astro dev run connections get librelinkup
+```
+
 ## Running Airflow
 
 ### Start it and test the DAG

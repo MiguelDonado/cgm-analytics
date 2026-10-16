@@ -19,12 +19,11 @@ overlapping runs never create duplicates.
 Readings are stored in the glucose_readings table of cgm-db.
 """
 
-import os
 from pathlib import Path
 
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from airflow.sdk import dag, task
+from airflow.sdk import BaseHook, dag, task
 from pendulum import datetime
 
 from cgm_analytics.main import fetch_recent_readings, get_my_patient, initialize_client
@@ -53,8 +52,11 @@ def fetch_glucose():
 
     @task
     def fetch_readings() -> list[dict]:
+        # Credentials from the `librelinkup` Airflow connection (AIRFLOW_CONN_LIBRELINKUP
+        # in .env), so Airflow masks the password in the task logs.
+        librelinkup = BaseHook.get_connection("librelinkup")
         client = initialize_client(
-            os.environ["LIBRELINK_EMAIL"], os.environ["LIBRELINK_PASSWORD"]
+            librelinkup.login, librelinkup.password
         )
         my_patient = get_my_patient(client)
         readings = fetch_recent_readings(client, my_patient)
@@ -73,6 +75,7 @@ def fetch_glucose():
             with conn.cursor() as cursor:
                 for r in readings:
                     cursor.execute(
+                    
                         upsert_sql,
                         (
                             r["factory_timestamp"],
