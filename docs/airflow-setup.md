@@ -403,3 +403,76 @@ start, because they are loaded from files.
 > `astro dev kill` will most likely delete them too, **including the stored
 > glucose readings**. Once there is real data, use `stop`/`restart` day to day
 > and back up (e.g. `pg_dump`) before any `kill`.
+
+### After a reboot: the containers come back on their own
+
+The Compose configuration that Astro generates gives every Airflow container
+`restart: unless-stopped`, and `cgm-db` has the same setting in
+`docker-compose.override.yml`. Docker starts at boot (the `docker` systemd
+service is enabled) and restarts every container with that policy. So after a
+reboot the whole stack is running again **without `astro dev start`**.
+
+`unless-stopped` means "restart it, unless it was stopped on purpose":
+
+| Before the reboot | After the reboot |
+|---|---|
+| running | started again |
+| stopped with `astro dev stop` | stays stopped |
+
+To check a container's policy:
+
+```bash
+docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' cgm-analytics_121cb8-cgm-db-1
+```
+
+### Docker waits for `/home` to be mounted
+
+On this machine `/home` is a **separate partition**, mounted during boot. Without
+extra configuration, systemd can start Docker **before** `/home` is mounted.
+That broke the DAGs once:
+
+1. Docker restarted the containers and set up the bind mounts (`dags/`,
+   `include/`, `plugins/`, `tests/`).
+2. `/home/miguel/6.Projects/cgm-analytics/dags` didn't exist yet. When a bind
+   mount's source is missing, Docker **creates it**: an empty folder owned by
+   root, on the root partition.
+3. That empty folder was mounted into the containers. A bind mount always
+   **hides** what the image has at that path (no merging, no fallback), so the
+   copy of `dags/` baked into the image was hidden too.
+4. Then `/home` was mounted on top. The host showed the real files, but the
+   containers still saw the empty folder: `Found 0 files for bundle
+   dags-folder` in the DAG processor logs, and no DAG in the UI.
+
+`cgm_analytics` still worked, because `src/` isn't mounted: it's installed in
+the image.
+
+**Fix:** a systemd drop-in that makes Docker wait for `/home`:
+
+```bash
+sudo systemctl edit docker
+```
+
+```ini
+[Unit]
+RequiresMountsFor=/home
+```
+
+```bash
+sudo systemctl daemon-reload
+```
+
+- `systemctl edit` doesn't change the original `docker.service`, which a package
+  update would overwrite. It writes an override file
+  (`/etc/systemd/system/docker.service.d/override.conf`) that systemd combines
+  with the original.
+- `RequiresMountsFor=/home` tells systemd that Docker needs `/home`. Docker
+  starts only after `/home` is mounted, and doesn't start if that mount fails.
+
+To check:
+
+```bash
+systemctl show docker -p RequiresMountsFor   # should print RequiresMountsFor=/home
+```
+
+If the DAGs ever disappear after a reboot again, `astro dev restart` recreates
+the containers with the real folders mounted.

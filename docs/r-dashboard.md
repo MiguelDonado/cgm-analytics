@@ -93,3 +93,45 @@ Load all readings, refresh with `reactivePoll()` when new readings arrive, and d
 date filtering and `iglu` metrics in R. Switch to B only if the data gets too big
 for memory (millions of rows, many patients) or many users hit the app at once;
 neither applies to a personal CGM dashboard, even after years of data.
+
+## Package installs: source vs. binary (Posit Package Manager)
+
+An R package comes in two forms:
+
+| Form | What it is | Install speed |
+|---|---|---|
+| **Source** | The package's code, including C/C++ parts that must be **compiled** locally | Slow: minutes per package with C code (and `iglu` pulls in dozens of dependencies) |
+| **Binary** | Already compiled, ready to use | Fast: seconds |
+
+On Windows and macOS, CRAN serves binaries. **On Linux, CRAN only serves
+source**, so every install compiles (which needs compilers and system development
+libraries such as `libpq-dev`, `libssl-dev`).
+
+**Posit Package Manager** (`packagemanager.posit.co`) is a free CRAN mirror that
+serves **precompiled Linux binaries**, one set per distribution. For Ubuntu 24.04
+("noble"), `dashboard/.Rprofile` sets it before activating renv:
+
+```r
+options(repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/noble/latest"))
+
+source("renv/activate.R")
+```
+
+`options()` must come **before** `source("renv/activate.R")`, so renv starts with
+that repository. Check with `getOption("repos")` after restarting R.
+
+### Why it matters for Docker
+
+When the dashboard image is built, renv reinstalls every package listed in
+`renv.lock`, and `renv.lock` also **records the repository** they come from:
+
+- **Plain CRAN recorded:** the build compiles everything (possibly 20+ minutes,
+  much longer on a Raspberry Pi), and the image needs compilers and development
+  libraries, so it's bigger.
+- **Posit Package Manager recorded:** the build downloads binaries (a minute or
+  two), with a smaller image.
+
+So the repository must be set **before** creating `renv.lock`.
+
+**Raspberry Pi:** the URL above is for Ubuntu noble on x86-64. Binary
+availability for the Pi's OS and ARM processor still has to be checked.

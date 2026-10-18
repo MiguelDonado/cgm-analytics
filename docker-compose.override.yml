@@ -14,6 +14,10 @@ services:
     # only be read by the same major version, so a silent upgrade would break it.
     image: postgres:17
 
+    # Start this container again whenever the Docker daemon starts (e.g. after
+    # a reboot), unless it was stopped on purpose with `astro dev stop`.
+    restart: unless-stopped
+
     # Read by the image to create the superuser and the database.
     # Applied ONLY on the first start, when the data directory is empty. Changing
     # them later does nothing: change the password with SQL, or delete the
