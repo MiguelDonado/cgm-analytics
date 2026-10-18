@@ -11,9 +11,5 @@ CREATE TABLE IF NOT EXISTS glucose_readings (
     factory_timestamp  TIMESTAMPTZ  PRIMARY KEY,  -- sensor time, UTC: the upsert key
     local_timestamp    TIMESTAMP    NOT NULL,     -- phone's local time, no time zone
     value_mg_dl        REAL         NOT NULL,     -- glucose in mg/dL
-    is_high            BOOLEAN      NOT NULL,     -- above the sensor's measurable range
-    is_low             BOOLEAN      NOT NULL,     -- below the sensor's measurable range
-    measurement_color  SMALLINT     NOT NULL,     -- LibreLinkUp range color code
-    reading_type       SMALLINT     NOT NULL,     -- LibreLinkUp's "type" field
     ingested_at        TIMESTAMPTZ  NOT NULL DEFAULT now()  -- when we first stored it
 );

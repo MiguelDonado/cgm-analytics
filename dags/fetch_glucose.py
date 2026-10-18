@@ -87,10 +87,6 @@ def fetch_glucose():
                             r["factory_timestamp"],
                             r["timestamp"],
                             r["value_in_mg_per_dl"],
-                            r["is_high"],
-                            r["is_low"],
-                            r["measurement_color"],
-                            r["type"],
                         ),
                     )
                     inserted += cursor.rowcount  # 1 if inserted, 0 if already stored
