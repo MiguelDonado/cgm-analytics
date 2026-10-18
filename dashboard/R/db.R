@@ -1,6 +1,5 @@
 # Database access for the dashboard: connection to cgm-db and queries.
-# Connection settings come from environment variables (dashboard/.Renviron
-# locally, Docker Compose in the container).
+# Connection settings come from environment variables (dashboard/.Renviron)
 
 connect_cgm_db <- function() {
   DBI::dbConnect(
@@ -15,7 +14,7 @@ connect_cgm_db <- function() {
 
 read_readings <- function(con) {
   readings <- DBI::dbGetQuery(con, "
-    SELECT factory_timestamp AS time, value_mg_dl
+    SELECT factory_timestamp AS time, value_mg_dl AS gl
     FROM glucose_readings
     ORDER BY factory_timestamp
   ")

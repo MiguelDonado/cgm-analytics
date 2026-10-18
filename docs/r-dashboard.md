@@ -18,7 +18,87 @@ harder.
 A personal dashboard (one user, interactive exploration of our own data, analysis
 code in R with `iglu`) is exactly what Shiny is built for.
 
-## Database access: DBI
+## App structure: the `R/` folder
+
+```
+dashboard/
+├── app.R      ← ui, server, shinyApp()
+└── R/
+    └── db.R   ← connect_cgm_db(), read_readings()
+```
+
+`app.R` calls `connect_cgm_db()` without any `source("R/db.R")`. That works
+because when Shiny starts an app (`shiny::runApp()` or RStudio's **Run App**),
+it first sources every `.R` file in the `R/` folder next to `app.R`, in
+alphabetical order (since Shiny 1.5, done by `shiny::loadSupport()`). By the
+time `app.R` runs, the functions already exist.
+
+R has no `import` like Python: `source("R/db.R")` just runs the file, and the
+functions it defines become available. Shiny does that step automatically.
+
+**The catch:** this only happens when Shiny starts the app. Running `app.R` line
+by line in the console, or with `source("app.R")`, doesn't load `R/`, and fails
+with `could not find function "connect_cgm_db"`. Run `source("R/db.R")` first in
+that case.
+
+Adding `source("R/db.R")` at the top of `app.R` would also work, but under
+`runApp()` the file would then be sourced twice. Relying on the `R/` folder is
+the Shiny convention, and it scales as more files are added (`R/metrics.R`,
+`R/plots.R`, ...).
+
+### Code outside vs. inside `server`
+
+```r
+# Outside server: runs once, when the app starts
+con <- connect_cgm_db()
+readings <- read_readings(con)
+DBI::dbDisconnect(con)
+
+server <- function(input, output, session) {
+  # Inside server: runs once per browser session (each tab that opens the app)
+}
+```
+
+| Where | Runs | Use for |
+|---|---|---|
+| Top of `app.R` (outside `server`) | Once, when the app starts | Work shared by all sessions: loading data, settings |
+| Inside `server` | Once per browser session | Per-user state: inputs, outputs, reactives |
+
+Loading the readings at the top means they're read once and shared by every
+session, instead of hitting the database each time a tab opens. The connection
+is closed right after the read, so no connection stays open while the app runs.
+
+### The Apply button: one `eventReactive()`, the rest `reactive()`
+
+Only the first step of the chain is tied to the button. Everything after it is
+a plain `reactive()`:
+
+```r
+filtered <- eventReactive(input$apply, { ... }, ignoreNULL = FALSE)  # waits for Apply
+cgm      <- reactive(to_iglu(filtered()))                            # follows filtered()
+metrics  <- reactive(summary_metrics(cgm()))                         # follows cgm()
+
+output$agp_plot <- renderPlot(plot_agp(cgm(), ...))
+```
+
+```
+Apply click → filtered() → cgm() → metrics() → value boxes
+                                 → agp_plot, lasagna_plot
+```
+
+A `reactive()` recomputes when a reactive it reads changes, and nothing else.
+`cgm()` only reads `filtered()`, which only changes when Apply is clicked, so
+`cgm()`, `metrics()` and every output downstream also update only on Apply.
+Moving the date picker changes `input$dates`, but only `filtered` reads it, and
+`eventReactive()` ignores it until the button is pressed.
+
+Tying every step to `input$apply` with its own `eventReactive()` would behave
+the same, but repeats the trigger everywhere. Adding a new output would then
+mean remembering to tie it to the button too. With one gate at the start,
+new outputs just read `cgm()` or `metrics()` and follow the button
+automatically. Each reactive is also cached: `cgm()` is computed once per click
+and shared by all the outputs that use it.
+
 
 `DBI` is R's standard **interface** to databases. A separate **driver** package
 does the actual talking to a specific database:

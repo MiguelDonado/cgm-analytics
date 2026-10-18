@@ -2,6 +2,38 @@
 
 ## When deploying to the Raspberry Pi
 
+Goal: run Airflow 24/7. On the laptop, any time it's off for more than ~12 hours
+(the window LibreLinkUp returns) loses readings for good, e.g. the 32-hour gap
+from 2026-10-16 18:36 to 2026-10-18 02:27.
+
+- [ ] **1. Hardware and OS.** Raspberry Pi 5 with 8 GB of RAM (4 GB works but is
+  tight: Airflow 3's containers alone use ~2–3 GB, plus `cgm-db` and Shiny).
+  An SSD (USB 3 or an NVMe HAT) instead of the SD card: Postgres writes
+  constantly, and SD cards wear out and corrupt under that load. The official
+  27 W power supply. OS: Ubuntu Server 24.04 LTS 64-bit, the same release
+  (noble) as the laptop, so the Posit Package Manager repository in
+  `dashboard/.Rprofile` keeps the same distribution name. It must be 64-bit,
+  because the Airflow and Postgres images are arm64. Flash it with Raspberry
+  Pi Imager, setting the hostname (e.g. `cgm-pi`), the user, SSH with a public
+  key, and Wi-Fi if needed (Ethernet is more reliable). Then
+  `ssh <user>@cgm-pi.local`.
+- [ ] **2. Docker and Astro CLI on the Pi.** Both have arm64 builds.
+- [ ] **3. Run Airflow and `cgm-db` on the Pi.** Clone the repo, move the
+  credentials hardcoded in `docker-compose.override.yml` to `.env`, and
+  `astro dev start`. `astro dev` is meant for local development, but it's fine
+  for a personal always-on box and keeps the same setup as the laptop. If the
+  Pi struggles, a `cron` job running the fetch script is a much lighter
+  alternative.
+- [ ] **4. Start on boot.** A systemd service that runs `astro dev start`, so the
+  Pi recovers from power cuts and reboots without manual steps.
+- [ ] **5. Move the data.** `pg_dump` the laptop's `cgm-db` and restore it on the
+  Pi (LibreLinkUp can't return the old readings again), then pause the
+  laptop's DAG.
+- [ ] **6. Dashboard on the Pi.** The R app as a container next to `cgm-db`.
+  Check that Posit Package Manager has arm64 binaries for noble (see
+  `docs/r-dashboard.md`); otherwise every package compiles from source.
+- [ ] **7. Remote access with Tailscale.** Open the dashboard and the Airflow UI
+  from the phone or laptop without exposing anything to the internet.
 - [ ] **Maintenance DAG to clean old Airflow metadata and logs.** Airflow never
   deletes XComs, run history (`dag_run`, `task_instance`) or task log files on
   its own. The growth is small (XComs ~6 MB/year at 24 runs/day, measured
