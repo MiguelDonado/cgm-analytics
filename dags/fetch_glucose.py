@@ -27,7 +27,12 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.sdk import BaseHook, dag, task
 from pendulum import datetime
 
-from cgm_analytics.main import fetch_recent_readings, get_my_patient, initialize_client
+from cgm_analytics.main import (
+    fetch_recent_readings,
+    get_my_patient,
+    initialize_client,
+    reading_to_row,
+)
 
 # Folder where Airflow looks for .sql files
 SQL_DIR = Path("/usr/local/airflow/include/sql")
@@ -83,11 +88,7 @@ def fetch_glucose():
                     cursor.execute(
                     
                         upsert_sql,
-                        (
-                            r["factory_timestamp"],
-                            r["timestamp"],
-                            r["value_in_mg_per_dl"],
-                        ),
+                        reading_to_row(r)
                     )
                     inserted += cursor.rowcount  # 1 if inserted, 0 if already stored
             # All rows in one transaction: either everything is saved or nothing

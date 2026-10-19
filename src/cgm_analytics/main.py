@@ -115,6 +115,18 @@ def fetch_recent_readings(client: PyLibreLinkUp, patient: Patient) -> list[Gluco
     """
     return client.graph(patient_identifier=patient)
 
+def reading_to_row(reading: dict) -> tuple[str, str, float]:
+    """Map a reading, as dumped by model_dump(mode="json"), to the values of
+    upsert_glucose_readings.sql: (factory_timestamp, local_timestamp, value_mg_dl).
+
+    factory_timestamp is UTC, timestamp is phone's local time
+    """
+    return (
+        reading["factory_timestamp"],
+        reading["timestamp"],
+        reading["value_in_mg_per_dl"],
+    )
+
 if __name__ == "__main__":
     load_dotenv()
     # Same credentials Airflow uses: the `librelinkup` connection, stored as JSON in .env.
@@ -123,4 +135,3 @@ if __name__ == "__main__":
     my_patient = get_my_patient(client)
     for reading in fetch_recent_readings(client, my_patient):
         print(reading)
-
