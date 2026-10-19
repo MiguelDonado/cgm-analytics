@@ -124,3 +124,14 @@ if __name__ == "__main__":
     for reading in fetch_recent_readings(client, my_patient):
         print(reading)
 
+def reading_to_row(reading: dict) -> tuple[str, str, float]:
+    """Map a reading, as dumped by model_dump(mode="json"), to the values of
+    upsert_glucose_readings.sql: (factory_timestamp, local_timestamp, value_mg_dl).
+
+    factory_timestamp is UTC, timestamp is phone's local time
+    """
+    return (
+        reading["factory_timestamp"],
+        reading["timestamp"],
+        reading["value_in_mg_per_dl"],
+    )

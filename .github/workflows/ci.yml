@@ -1,0 +1,28 @@
+name: CI
+
+on: 
+    push:
+        branches: [main]
+    pull_request:
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            # Copy our repo into the runner (fresh venv)
+            - uses: actions/checkout@v4
+
+            # Install uv and caches downloaded packages between runs
+            - uses: astral-sh/setup-uv@v6
+              with: 
+                enable-cache: true
+            
+            # Installs your project plus the dev group
+            - name: Install dependencies
+              run: uv sync --locked
+
+            # Only tests/unit not tests/dag
+            - name: Run unit tests
+              run: uv run pytest
+
+            
