@@ -58,6 +58,17 @@ include/             Non-Python assets the DAGs use: SQL files now, maybe config
                      or dbt later.
 ```
 
+**Rule of thumb** for where new code or files go:
+
+- **`include/`**: things that only exist *for the DAGs*: SQL files
+  (`include/sql/`), small templates, config.
+- **`src/`**: the actual application/domain code, which should stay importable,
+  testable and reusable **without Airflow** (e.g. `uv run pytest` on the host, or
+  running it elsewhere like the Raspberry Pi later).
+
+- `src/cgm_analytics/` is a real package defined in `pyproject.toml`.
+
+
 ## How the project gets into the containers
 
 `/usr/local/airflow` is a path **inside the Docker image**, not on the host. It is

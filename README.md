@@ -32,9 +32,13 @@ night or a few days per week to see how I can improve my glucose levels.
   - [Background](#background)
   - [Objectives](#objectives)
   - [Tech stack](#tech-stack)
-  - [Data analysis](#data-analysis)
   - [Workflow](#workflow)
+  - [Data analysis](#data-analysis)
   - [Getting Started](#getting-started)
+    - [Prerequisites](#prerequisites)
+    - [Setup](#setup)
+    - [First run](#first-run)
+    - [After changing the code](#after-changing-the-code)
   - [References](#references)
   - [License](#license)
 
@@ -97,6 +101,20 @@ this project gets them.
 
 ---
 
+## Workflow
+
+The project has three parts:
+
+1. **Data engineering**: an Airflow DAG runs every hour, extracts the latest
+   readings from LibreLinkUp using the `pylibrelinkup` library, transforms them
+   and loads them into a PostgreSQL database.
+2. **Data analysis**: the readings are analyzed in R with the `iglu` package
+   (summary metrics and the AGP).
+3. **Web application**: a Shiny app turns the analysis into an interactive,
+   data-driven dashboard.
+
+---
+
 ## Data analysis
 
 There are many ways to analyze CGM data. This project uses the most common
@@ -138,25 +156,30 @@ little new information. This is how they look in the dashboard:
 
 ---
 
-## Workflow
-
-The project has three parts:
-
-1. **Data engineering**: an Airflow DAG runs every hour, extracts the latest
-   readings from LibreLinkUp using the `pylibrelinkup` library, transforms them
-   and loads them into a PostgreSQL database.
-2. **Data analysis**: the readings are analyzed in R with the `iglu` package
-   (summary metrics and the AGP).
-3. **Web application**: a Shiny app turns the analysis into an interactive,
-   data-driven dashboard.
-
----
-
 ## Getting Started
 
-1. **Create the env files.** They hold the credentials and are kept out of
-   git. Copy the templates, set the same database password in all three, and
-   add your LibreLinkUp login to `.env`:
+### Prerequisites
+
+- **[Docker](https://docs.docker.com/get-docker/)**: every part of the project
+  runs in containers.
+- **[Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli)**: runs
+  Airflow locally. No Astronomer account is needed.
+- **A LibreLinkUp follower account.** In the FreeStyle LibreLink app, go to
+  **Connected Apps → LibreLinkUp** and invite an email address. Create a
+  LibreLinkUp account with that email and accept the invitation. The project
+  logs in with this account to read the readings.
+
+### Setup
+
+1. **Clone the repository:**
+
+   ```bash
+   git clone https://github.com/MiguelDonado/cgm-analytics.git
+   cd cgm-analytics
+   ```
+
+2. **Create the env files.** They hold the credentials and are kept out of
+   git. Copy the templates:
 
    ```bash
    cp .env.example .env
@@ -164,22 +187,52 @@ The project has three parts:
    cp dashboard/.env.example dashboard/.env
    ```
 
+   Then fill them in:
+
+   | File | Used by | What to set |
+   |---|---|---|
+   | `cgm-db.env` | The glucose database | `POSTGRES_PASSWORD`: choose a password |
+   | `.env` | Airflow | The same password in `AIRFLOW_CONN_CGM_DB`, and your LibreLinkUp email and password in `AIRFLOW_CONN_LIBRELINKUP` |
+   | `dashboard/.env` | The dashboard | The same password in `CGM_DB_PASSWORD` |
+
    `astro dev start` fails if `cgm-db.env` or `dashboard/.env` is missing,
    because `docker-compose.override.yml` reads them with `env_file`.
 
-2. **Build the dashboard image** (Astro only builds the Airflow image):
+3. **Build the dashboard image** (Astro only builds the Airflow image):
 
    ```bash
    docker build -t cgm-dashboard dashboard
    ```
 
-3. **Start everything:**
+4. **Start everything:**
 
    ```bash
    astro dev start
    ```
 
-   The dashboard is served on <http://localhost:3838>.
+### First run
+
+1. **Load the first readings.** Open the Airflow UI at
+   <http://localhost:8080>, switch on the `fetch_glucose` DAG and click
+   **Trigger**. From then on it runs every hour on its own.
+
+   LibreLinkUp only returns about the **last 12 hours** of readings, so the
+   history starts the day you set this up. Readings older than that can't be
+   recovered, so keep the project running.
+
+2. **Open the dashboard** at <http://localhost:3838>. It picks up new
+   readings on its own, within 5 minutes of each DAG run.
+
+### After changing the code
+
+| What changed | Command |
+|---|---|
+| The pipeline (`dags/`, `src/`, `include/`, `requirements.txt`) | `astro dev restart` |
+| The dashboard (`dashboard/`) | `docker build -t cgm-dashboard dashboard && astro dev restart` |
+
+`astro dev stop` stops all the containers, and the readings are kept. Avoid
+`astro dev kill`, because it most likely deletes the database volume along with
+all the readings.
 
 ---
 
