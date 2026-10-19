@@ -203,12 +203,10 @@ into the generated Compose configuration:
 services:
   cgm-db:
     image: postgres:17
-    environment:
-      POSTGRES_USER: cgm
-      POSTGRES_PASSWORD: cgm
-      POSTGRES_DB: cgm
+    env_file:
+      - ./cgm-db.env         # POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB (not in git)
     ports:
-      - "5433:5432"          # 5432 on the host is taken by Airflow's own Postgres
+      - "127.0.0.1:5433:5432" # localhost only; 5432 on the host is taken by Airflow's own Postgres
     volumes:
       - cgm_db_data:/var/lib/postgresql/data   # keeps data across restarts
     networks:
@@ -226,6 +224,29 @@ volumes:
   breaks this volume path.
 
 Each setting is explained in the comments of `docker-compose.override.yml`.
+
+### The `airflow` network: user-defined, not Docker's default
+
+Docker always has a network called `bridge`, used by `docker run` when no
+`--network` is given. Compose never uses it: it creates its own **user-defined**
+bridge network for each project. Astro's generated Compose file defines one
+called `airflow`, and Compose prefixes it with the project name:
+
+```bash
+docker network ls
+# cgm-analytics_121cb8_airflow   bridge   ← user-defined, created by Compose
+# bridge                         bridge   ← Docker's default, not used here
+```
+
+The difference that matters: **only user-defined networks have DNS between
+containers.** Each container is registered under its service name, so `cgm-db`
+resolves to its address on the network (e.g. `172.18.0.5`). That's why the
+Airflow connection and the dashboard use `cgm-db` as the host. On the default
+`bridge`, names don't resolve and containers can only reach each other by IP,
+which changes every time a container is recreated.
+
+Every service that needs to talk to another one must join the same network
+(`networks: - airflow`). Services on different networks can't see each other.
 
 ### Airflow connection to `cgm-db`
 

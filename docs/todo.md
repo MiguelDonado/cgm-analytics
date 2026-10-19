@@ -88,3 +88,5 @@ readings only: never call LibreLinkUp or touch real glucose data.
 - [ ] **Extras.** Dependabot (pip, GitHub Actions, Docker), branch protection
   requiring CI to pass, a reusable workflow / composite action for the uv
   setup, CodeQL and `trivy` image scanning, status badges in the README.
+- [ ] **Publish the images.** Push them to Docker Hub, or ship the whole
+  Compose project.

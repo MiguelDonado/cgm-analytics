@@ -12,6 +12,7 @@ wheels/
 
 # Environment variables
 .env
+cgm-db.env
 
 # Astro / Airflow
 .astro/

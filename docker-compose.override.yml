@@ -18,21 +18,20 @@ services:
     # a reboot), unless it was stopped on purpose with `astro dev stop`.
     restart: unless-stopped
 
-    # Read by the image to create the superuser and the database.
+    # POSTGRES_USER, POSTGRES_PASSWORD and POSTGRES_DB, read by the image to
+    # create the superuser and the database. Kept in cgm-db.env, out of git
+    # (template: cgm-db.env.example).
     # Applied ONLY on the first start, when the data directory is empty. Changing
     # them later does nothing: change the password with SQL, or delete the
-    # volume and start over. Hardcoded credentials are fine locally; on the
-    # Raspberry Pi, move them to .env and reference them as ${CGM_DB_PASSWORD}.
-    environment:
-      POSTGRES_USER: cgm
-      POSTGRES_PASSWORD: cgm
-      POSTGRES_DB: cgm
+    # volume and start over.
+    env_file:
+      - ./cgm-db.env
 
     # host port : container port. Exposes Postgres on localhost:5433 for psql or
     # DBeaver on the host (5432 is taken by Astro's own Postgres). Airflow doesn't
     # use this mapping: it talks to cgm-db:5432 directly over the Docker network.
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
 
     # Named volume mounted where Postgres 17 keeps its files, so the data lives
     # outside the container and survives stop/restart. On the host it's under
@@ -42,6 +41,41 @@ services:
 
     # Astro's network, shared with the scheduler and the other Airflow
     # containers. Containers can only reach each other by name on the same network.
+    networks:
+      - airflow
+
+  # Shiny dashboard, served on http://localhost:3838.
+  dashboard:
+    # Image built by hand from dashboard/Dockerfile: Astro only builds its own
+    # Airflow image and ignores `build:` here. After changing the app, run:
+    #   docker build -t cgm-dashboard dashboard && astro dev restart
+    image: cgm-dashboard
+
+    # Use the local image only. Without this, a missing image makes Compose try
+    # to pull "cgm-dashboard" from Docker Hub, which fails with a confusing error.
+    pull_policy: never
+
+    # Same as cgm-db: come back after a reboot unless stopped on purpose.
+    restart: unless-stopped
+
+    # Start cgm-db first. This only waits for the container to start, not for
+    # Postgres to accept connections; if the app fails on startup, `restart`
+    # retries it.
+    depends_on:
+      - cgm-db
+
+    # Connection settings for db.R (read with Sys.getenv()), from a file kept
+    # out of git. Docker network values: host cgm-db and port 5432, not the
+    # localhost:5433 mapping, which only exists on the host.
+    env_file:
+      - ./dashboard/.env
+
+    # host:port:container port. Bound to 127.0.0.1 so only this machine can
+    # open it; Shiny listens on 3838 inside the container.
+    ports:
+      - "127.0.0.1:3838:3838"
+
+    # Same network as cgm-db, so the name cgm-db resolves to its address.
     networks:
       - airflow
 

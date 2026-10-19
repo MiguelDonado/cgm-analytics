@@ -1,0 +1,6 @@
+# Never sent to Docker, even if the Dockerfile copies the whole folder.
+.Renviron
+.Rproj.user
+renv/library
+Rplots.pdf
+.env

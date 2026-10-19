@@ -154,6 +154,33 @@ The project has three parts:
 
 ## Getting Started
 
+1. **Create the env files.** They hold the credentials and are kept out of
+   git. Copy the templates, set the same database password in all three, and
+   add your LibreLinkUp login to `.env`:
+
+   ```bash
+   cp .env.example .env
+   cp cgm-db.env.example cgm-db.env
+   cp dashboard/.env.example dashboard/.env
+   ```
+
+   `astro dev start` fails if `cgm-db.env` or `dashboard/.env` is missing,
+   because `docker-compose.override.yml` reads them with `env_file`.
+
+2. **Build the dashboard image** (Astro only builds the Airflow image):
+
+   ```bash
+   docker build -t cgm-dashboard dashboard
+   ```
+
+3. **Start everything:**
+
+   ```bash
+   astro dev start
+   ```
+
+   The dashboard is served on <http://localhost:3838>.
+
 ---
 
 ## References
