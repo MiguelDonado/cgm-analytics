@@ -131,3 +131,22 @@ minutes, well before the next hourly run.
 **Why not more retries:** the next hourly run fetches the same ~12-hour window
 anyway, so no data is lost if all retries fail. More retries would only mean
 more calls to an API that's already failing.
+
+## Missed runs: `catchup`
+
+When the scheduler is down (machine off, asleep), hourly runs are missed. When
+it comes back, `catchup` decides what happens to them:
+
+- `catchup=True`: run **all** the missed runs, one per missed hour.
+- `catchup=False`: run **only the last one** (the most recent hour that has
+  passed) and skip the rest.
+
+`catchup=False` does **not** mean "skip all of them". Example: machine off from
+23:07 to 07:18 (CEST):
+
+```
+22:00  23:00  00:00  01:00  02:00  03:00  04:00  05:00 | 05:19 UTC, scheduler back
+ └──────────────── missed ───────────────────┘   └ latest passed → runs now
+```
+
+The 05:00 UTC run starts at 05:19, as soon as the scheduler is up.

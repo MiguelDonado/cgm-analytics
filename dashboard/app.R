@@ -28,21 +28,9 @@ ui <- page_sidebar(
     ),
     actionButton("apply", "Apply", class = "btn-primary")
   ),
-  layout_column_wrap(
-    width = 1/4,
-    fill = FALSE,
-    value_box("Time in range", textOutput("tir")),
-    value_box("Mean glucose", textOutput("mean")),
-    value_box("GMI", textOutput("gmi")),
-    value_box("CV", textOutput("cv"))
-  ),
   card(
     card_header("Ambulatory glucose profile"),
     plotOutput("agp_plot")
-  ),
-  card(
-    card_header("Lasagna plot"),
-    plotOutput("lasagna_plot")
   )
 )
 
@@ -61,25 +49,12 @@ server <- function(input, output) {
   })
   output$agp_plot <- renderPlot({
     n_days <- length(unique(filtered()$date))
-    validate(need(n_days >= 14, paste("The AGP needs at least 14 days of data, the selected range has", n_days)))
-    plot_agp(cgm(), tz = "Europe/Madrid")
+    validate(need(n_days >= 1, paste("The AGP needs at least 1 day of data, the selected range has", n_days)))
+    # If I want to disable the daily plots: daily = FALSE
+    # cgm(): Because cgm is the reactive expression, that contains the logic that only recomputed when the Apply button is clicked
+    #        To pass its value, we need to call it as a function, cgm().
+    agp(cgm(), tz = "Europe/Madrid")
   })
-  
-  output$lasagna_plot <- renderPlot({
-    plot_glu(
-      cgm(), 
-      plottype = "lasagna",
-      datatype = "average",
-      color_scheme = "red-orange",
-      tz = "Europe/Madrid")
-  })
-  
-  metrics <- reactive(summary_metrics(cgm()))
-  
-  output$tir  <- renderText(sprintf("%.0f %%", metrics()$tir))
-  output$mean <- renderText(sprintf("%.0f mg/dL", metrics()$mean))
-  output$gmi  <- renderText(sprintf("%.1f %%", metrics()$gmi))
-  output$cv   <- renderText(sprintf("%.0f %%", metrics()$cv))
 }
 
 shinyApp(ui, server)

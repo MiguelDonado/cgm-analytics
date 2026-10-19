@@ -21,3 +21,6 @@ airflow.db
 logs/
 .Rproj.user
 .Renviron
+
+# Assets
+*.kdenlive
