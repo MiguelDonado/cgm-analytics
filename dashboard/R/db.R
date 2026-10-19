@@ -22,3 +22,12 @@ read_readings <- function(con) {
   attr(readings$time, "tzone") <- "Europe/Madrid"
   readings
 }
+
+# reactivePoll() needs a cheap function that returns something
+# that changes when new data arrives.
+read_last_time <- function(con) {
+  DBI::dbGetQuery(con, "
+    SELECT max(factory_timestamp) AS last_time
+    FROM glucose_readings
+  ")$last_time
+}

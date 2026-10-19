@@ -3,46 +3,73 @@ library(tidyverse)
 library(bslib)
 library(iglu)
 
-# Load all readings once at startup
-con <-connect_cgm_db()
-readings <- read_readings(con)
-DBI::dbDisconnect(con)
-
-# Local calendar day of each reading
-readings$date <- as.Date(readings$time, tz = "Europe/Madrid")
-first_day <- min(readings$date)
-last_day <- max(readings$date)
-
-
-ui <- page_sidebar(
-  title = "CGM dashboard",
-  sidebar = sidebar(
-    dateRangeInput(
-      "dates", "Dates",
-      # Default values
-      start = first_day, end = last_day,
-      min = first_day, max = last_day,
-      # Start of the week: Monday
-      weekstart = 1,
-      format = "dd-mm-yy"
-    ),
-    actionButton("apply", "Apply", class = "btn-primary")
-  ),
-  card(
-    card_header("Ambulatory glucose profile"),
-    plotOutput("agp_plot")
-  )
+# All readings, shared by every visitor. Every 5 minutes checkFunc asks for the
+# time of the latest reading (cheap); only when it changes does valueFunc
+# reload all the readings. session = NULL: not tied to one visitor, it runs as
+# long as the app runs.
+readings <- reactivePoll(
+  intervalMillis = 5 * 60 * 1000,
+  session = NULL,
+  checkFunc = function() {
+    con <- connect_cgm_db()
+    on.exit(DBI::dbDisconnect(con))
+    read_last_time(con)
+  },
+  valueFunc = function() {
+    con <- connect_cgm_db()
+    on.exit(DBI::dbDisconnect(con))
+    readings <- read_readings(con)
+    # Local calendar day of each reading
+    readings$date <- as.Date(readings$time, tz = "Europe/Madrid")
+    readings
+  }
 )
 
-server <- function(input, output) {
-  # Readings in the chosen range; recomput, ed only when Apply is clicked
-  filtered <- eventReactive(input$apply, {
-    readings |> 
+# A function instead of a fixed value: Shiny builds the page on each visit, so
+# the default range includes the latest readings. isolate(): only the current
+# value is needed to build the page (see docs/r-dashboard.md).
+ui <- function(request) {
+  days <- isolate(readings())$date
+
+  page_sidebar(
+    title = "CGM dashboard",
+    sidebar = sidebar(
+      dateRangeInput(
+        "dates", "Dates",
+        # Default values
+        start = min(days), end = max(days),
+        min = min(days), max = max(days),
+        # Start of the week: Monday
+        weekstart = 1,
+        format = "dd-mm-yy"
+      ),
+      actionButton("apply", "Apply", class = "btn-primary")
+    ),
+    card(
+      card_header("Ambulatory glucose profile"),
+      plotOutput("agp_plot")
+    )
+  )
+}
+
+server <- function(input, output, session) {
+  # New readings: let the picker reach the new days. Only the limits change;
+  # the dates the user selected stay as they are.
+  observe({
+    days <- readings()$date
+    updateDateRangeInput(session, "dates", min = min(days), max = max(days))
+  })
+
+  # Readings in the chosen range; recomputed only when Apply is clicked 
+  # or when new data is available
+  # data 
+  filtered <- eventReactive(list(input$apply,readings()), {
+    readings() |>
       filter(
-        date >= input$dates[1] & date <= input$dates[2], 
+        date >= input$dates[1] & date <= input$dates[2]
       )
   }, ignoreNULL = FALSE)
-  
+
   cgm <- reactive({
     req(nrow(filtered()) > 0)
     to_iglu(filtered())
