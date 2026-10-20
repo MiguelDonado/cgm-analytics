@@ -19,6 +19,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "psycopg2-binary>=2.9.13",
     "pytest>=9.1.1",
 ]
 
