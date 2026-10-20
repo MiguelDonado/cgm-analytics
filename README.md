@@ -198,17 +198,14 @@ little new information. This is how they look in the dashboard:
    `astro dev start` fails if `cgm-db.env` or `dashboard/.env` is missing,
    because `docker-compose.override.yml` reads them with `env_file`.
 
-3. **Build the dashboard image** (Astro only builds the Airflow image):
-
-   ```bash
-   docker build -t cgm-dashboard dashboard
-   ```
-
-4. **Start everything:**
+3. **Start everything:**
 
    ```bash
    astro dev start
    ```
+
+   The first start pulls the dashboard image from
+   [Docker Hub](https://hub.docker.com/r/migueldonado/cgm-dashboard).
 
 ### First run
 
@@ -228,7 +225,10 @@ little new information. This is how they look in the dashboard:
 | What changed | Command |
 |---|---|
 | The pipeline (`dags/`, `src/`, `include/`, `requirements.txt`) | `astro dev restart` |
-| The dashboard (`dashboard/`) | `docker build -t cgm-dashboard dashboard && astro dev restart` |
+| The dashboard (`dashboard/`) | `docker build -t migueldonado/cgm-dashboard:0.1.0 dashboard && astro dev restart` |
+
+A local build of the dashboard replaces the published image of the same tag on
+this machine, so `astro dev restart` runs your changes.
 
 `astro dev stop` stops all the containers, and the readings are kept. Avoid
 `astro dev kill`, because it most likely deletes the database volume along with

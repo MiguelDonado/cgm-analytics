@@ -298,6 +298,7 @@ Building the page isn't a reactive context, hence `isolate()`.
 ```r
 observe({
   days <- readings()$date
+  req(length(days) > 0)  # no readings yet, see "Fresh install" below
   updateDateRangeInput(session, "dates", min = min(days), max = max(days))
 })
 ```
@@ -330,6 +331,46 @@ would fix the limits on its own, but it never touches `start`/`end`. Without the
 | `ui` as a function | On each page load | The default selection (first → latest day) and the limits |
 | The observer | When new data loads, in open tabs | Only the limits, so new days become selectable |
 
+### Fresh install: no table, no readings
+
+On a fresh install, the dashboard starts before the DAG's first run. Tested
+against an empty Postgres, it failed in two ways:
+
+| Database state | What happened |
+|---|---|
+| No `glucose_readings` table yet | `reactivePoll()` calls `read_last_time()` at startup; the query fails with `relation "glucose_readings" does not exist`, R stops (`Execution halted`), and `restart: unless-stopped` restarts the container in a loop until the DAG creates the table |
+| Table exists, no rows | `days` is empty, so `min(days)` / `max(days)` return `Inf` with warnings, and the date picker can't be built |
+
+**Fix, in two layers:**
+
+- **`R/db.R`: a missing table is treated like an empty one.** Both functions
+  check `DBI::dbExistsTable()` first. `read_readings()` returns a data frame
+  with the same columns and types but no rows, so the rest of the app works on
+  it unchanged. `read_last_time()` returns `NA`, the same value `max()` gives on
+  an empty table. When the first readings arrive, it changes from `NA` to a
+  timestamp and `reactivePoll()` loads them.
+- **`app.R`: "no rows" gets its own page.** `ui` returns a "No readings yet"
+  card when `days` is empty, so `min(days)` never runs. The observer that moves
+  the picker's limits starts with `req(length(days) > 0)`, which silently stops
+  it while there's no data; it runs again when `readings()` changes. The plot
+  needs nothing: its `renderPlot()` only runs when `plotOutput("agp_plot")` is
+  on the page.
+
+`ui` runs on every page load (see above), so after the first DAG run a reload
+shows the normal dashboard.
+
+**Testing it** with a throwaway database, without touching `cgm-db`:
+
+```bash
+docker network create cgm-test
+docker run --rm -d --name cgm-test-db --network cgm-test \
+  -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test postgres:17
+docker run --rm --network cgm-test -p 127.0.0.1:3839:3838 \
+  -e CGM_DB_HOST=cgm-test-db -e CGM_DB_PORT=5432 -e CGM_DB_NAME=test \
+  -e CGM_DB_USER=test -e CGM_DB_PASSWORD=test migueldonado/cgm-dashboard:0.1.0
+# empty table: docker exec -i cgm-test-db psql -U test < include/sql/create_glucose_readings.sql
+```
+
 ## Package installs: source vs. binary (Posit Package Manager)
 
 An R package comes in two forms:
@@ -361,16 +402,13 @@ that repository. Check with `getOption("repos")` after restarting R.
 When the dashboard image is built, renv reinstalls every package listed in
 `renv.lock`, and `renv.lock` also **records the repository** they come from:
 
-- **Plain CRAN recorded:** the build compiles everything (possibly 20+ minutes,
-  much longer on a Raspberry Pi), and the image needs compilers and development
+- **Plain CRAN recorded:** the build compiles everything (possibly 20+ minutes),
+  and the image needs compilers and development
   libraries, so it's bigger.
 - **Posit Package Manager recorded:** the build downloads binaries (a minute or
   two), with a smaller image.
 
 So the repository must be set **before** creating `renv.lock`.
-
-**Raspberry Pi:** the URL above is for Ubuntu noble on x86-64. Binary
-availability for the Pi's OS and ARM processor still has to be checked.
 
 ### System libraries
 
@@ -394,18 +432,36 @@ as the `dashboard` service in `docker-compose.override.yml`.
 |---|---|
 | `dashboard/Dockerfile` | `rocker/r-ver` (same R version as `renv.lock`) + system libraries + `renv::restore()` + the app |
 | `dashboard/.env` | Connection settings for `db.R`, not in git (template: `dashboard/.env.example`) |
-| `docker-compose.override.yml` | Runs the image on the `airflow` network, port `127.0.0.1:3838` |
+| `docker-compose.override.yml` | Runs the published image on the `airflow` network, port `127.0.0.1:3838` |
 
-### The image is built by hand
+### The image comes from Docker Hub
 
 Astro only builds its own Airflow image: it ignores `build:` in the override
-file (`No such image: cgm-analytics_121cb8-dashboard`). So the service uses a
-local image, `image: cgm-dashboard` with `pull_policy: never`, built separately.
-After changing `app.R`, `R/`, `renv.lock` or the Dockerfile:
+file (`No such image: cgm-analytics_121cb8-dashboard`). So the dashboard image
+is built separately and published on Docker Hub, and the service runs it by
+name, pinned to a version:
+
+```yaml
+image: migueldonado/cgm-dashboard:0.1.0
+```
+
+Compose's default pull policy (`missing`) pulls it on the first
+`astro dev start`, and after that uses the copy on the machine. Updating is a
+deliberate change: publish a new version, bump the tag, `astro dev restart`
+(see `docs/ci-cd.md`).
+
+While working on the dashboard, build it locally **with the same name**. A
+local image with that tag is "already on the machine", so Compose runs it
+instead of pulling the published one. After changing `app.R`, `R/`,
+`renv.lock` or the Dockerfile:
 
 ```bash
-docker build -t cgm-dashboard dashboard && astro dev restart
+docker build -t migueldonado/cgm-dashboard:0.1.0 dashboard && astro dev restart
 ```
+
+To go back to the published image, delete the local one
+(`docker rmi migueldonado/cgm-dashboard:0.1.0`) and restart: Compose pulls it
+again.
 
 The Dockerfile copies `renv.lock` and runs `renv::restore()` **before** copying
 the app code. Docker caches each step, so changing `app.R` rebuilds in seconds;

@@ -46,14 +46,12 @@ services:
 
   # Shiny dashboard, served on http://localhost:3838.
   dashboard:
-    # Image built by hand from dashboard/Dockerfile: Astro only builds its own
-    # Airflow image and ignores `build:` here. After changing the app, run:
-    #   docker build -t cgm-dashboard dashboard && astro dev restart
-    image: cgm-dashboard
 
-    # Use the local image only. Without this, a missing image makes Compose try
-    # to pull "cgm-dashboard" from Docker Hub, which fails with a confusing error.
-    pull_policy: never
+    # Published on Docker Hub, built from dashboard/Dockerfile (see docs/ci-cd.md).
+    # Pinned to a version, so an update is a deliberate change: update the tag for later images
+    # and run `astro dev restart`. If the image isn't on this machine yet,
+    # Compose pulls it on start.
+    image: migueldonado/cgm-dashboard:0.1.0
 
     # Same as cgm-db: come back after a reboot unless stopped on purpose.
     restart: unless-stopped
