@@ -31,6 +31,18 @@ readings <- reactivePoll(
 ui <- function(request) {
   days <- isolate(readings())$date
 
+  # Fresh install: no readings stored yet, so there are no dates fro the picker
+  if (length(days) == 0) {
+    return(page_fillable(
+      title = "CGM dashboard",
+      card(
+        card_header("No readings yet"),
+        "The fetch_glucose DAG stores new readings every hour. Reload this 
+        page after its first run."
+      )
+    ))
+  }
+
   page_sidebar(
     title = "CGM dashboard",
     sidebar = sidebar(
@@ -57,6 +69,7 @@ server <- function(input, output, session) {
   # the dates the user selected stay as they are.
   observe({
     days <- readings()$date
+    req(length(days) > 0)
     updateDateRangeInput(session, "dates", min = min(days), max = max(days))
   })
 
