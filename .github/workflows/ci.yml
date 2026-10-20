@@ -24,5 +24,45 @@ jobs:
             # Only tests/unit not tests/dag
             - name: Run unit tests
               run: uv run pytest
+    
+    integration:
+        runs-on: ubuntu-latest
 
+        # Container started in the runner (fresh VM) before the steps and removed after the job.
+        services:
+            postgres: 
+                image: postgres:17
+                env:
+                    POSTGRES_USER: test
+                    POSTGRES_PASSWORD: test
+                    POSTGRES_DB: test
+                ports:
+                    - 5432:5432
+                
+                # Wait until Postgres accepts connections before running the steps
+                options: >-
+                    --health-cmd pg_isready
+                    --health-interval 5s
+                    --health-timeout 5s
+                    --health-retries 10
+        # Read by libpq when the tests call psycopg2.connect()
+        env:
+            PGHOST: localhost
+            PGPORT: 5432
+            PGUSER: test
+            PGPASSWORD: test
+            PGDATABASE: test
+        
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: astral-sh/setup-uv@v6
+              with:
+                enable-cache: true
             
+            - name: Install dependencies
+              run: uv sync --locked
+
+            # Only tests/integration: 
+            - name: Run SQL integration tests
+              run: uv run pytest tests/integration -v
