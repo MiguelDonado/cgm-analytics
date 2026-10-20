@@ -63,8 +63,7 @@ include/             Non-Python assets the DAGs use: SQL files now, maybe config
 - **`include/`**: things that only exist *for the DAGs*: SQL files
   (`include/sql/`), small templates, config.
 - **`src/`**: the actual application/domain code, which should stay importable,
-  testable and reusable **without Airflow** (e.g. `uv run pytest` on the host, or
-  running it elsewhere like the Raspberry Pi later).
+  testable and reusable **without Airflow** (e.g. `uv run pytest` on the host).
 
 - `src/cgm_analytics/` is a real package defined in `pyproject.toml`.
 
@@ -307,8 +306,7 @@ postgresql://cgm:cgm@cgm-db:5432/cgm
 
 
 Run `astro dev restart` after creating or changing the override file. The same
-service block can go into a plain `docker-compose.yml` when running on the
-Raspberry Pi, so it isn't Astro-specific.
+service block works in a plain `docker-compose.yml`, so it isn't Astro-specific.
 
 ### Airflow connection to LibreLinkUp
 
