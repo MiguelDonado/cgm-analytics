@@ -40,7 +40,7 @@ jobs:
                     - 5432:5432
                 
                 # Wait until Postgres accepts connections before running the steps
-                ptions: >-
+                options: >-
                     --health-cmd pg_isready
                     --health-interval 5s
                     --health-timeout 5s
