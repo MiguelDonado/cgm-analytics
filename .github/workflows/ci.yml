@@ -66,3 +66,20 @@ jobs:
             # Only tests/integration: 
             - name: Run SQL integration tests
               run: uv run pytest tests/integration -v
+
+    dags:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            # Same version as on the laptop, so CI and local runs agree
+            - name: Install Astro CLI
+              run: curl -sSL install.astronomer.io | sudo bash -s -- v1.46.0
+
+            # Builds the image and imports every DAG in it, reporting import errors
+            - name: Parse DAGs
+              run: astro dev parse
+
+            # Only tests/dags: unit and integration tests run in their own jobs
+            - name: Run DAG tests
+              run: astro dev pytest tests/dags

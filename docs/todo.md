@@ -9,25 +9,12 @@
 One PR per step, so the history shows the pipeline growing. CI uses fixture
 readings only: never call LibreLinkUp or touch real glucose data.
 
-- [ ] **1. Lint workflow.** `.github/workflows/ci.yml` on push to `main` and on
-  PRs: `astral-sh/setup-uv` with `enable-cache`, `uv sync --locked` (catches a
-  stale `uv.lock`), `ruff check` and `ruff format --check`.
-- [ ] **3. SQL against a real Postgres.** A job with a `postgres:17` service
-  container that runs `create_glucose_readings.sql`, then the upsert twice
-  with fixture rows and asserts no duplicates (proves it's idempotent).
 - [ ] **4. DAG integrity.** Install the Astro CLI in the runner and run
   `astro dev parse` / `astro dev pytest` (the tests in `tests/dags/`).
 - [ ] **5. R dashboard checks.** `r-lib/actions/setup-r` + `setup-renv`, then
   `lintr` and `testthat` for `dashboard/R/db.R`. Use path filters so R jobs
   only run when `dashboard/**` changes and Python jobs only for `src/**`,
   `dags/**`, `tests/**`.
-- [ ] **6. Multi-arch image to GHCR.** `docker/setup-qemu-action` + buildx +
-  `docker/build-push-action` with layer caching, building amd64 and arm64
-  (needed for the Pi). Tag with the commit SHA, and semver on release tags.
-- [ ] **7. Deploy to the Pi.** A self-hosted runner on the Pi (or Tailscale +
-  SSH) that pulls the image, runs `docker compose up -d`, and smoke-tests the
-  Airflow health endpoint. Gate it with a `production` GitHub Environment
-  (manual approval, environment secrets for the DB password).
 - [ ] **Extras.** Dependabot (pip, GitHub Actions, Docker), branch protection
   requiring CI to pass, a reusable workflow / composite action for the uv
   setup, CodeQL and `trivy` image scanning, status badges in the README.
