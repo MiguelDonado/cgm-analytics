@@ -1,6 +1,23 @@
+# Continuous Integration: check every change before it reaches main. Runs on
+# every push to main and on every PR, which shows ✓ or ✗ before merging (see
+# docs/pull-requests.md and docs/ci-cd.md).
+#
+# Three jobs, in parallel, each on its own fresh GitHub runner:
+#
+#   test         Unit tests (tests/unit/): plain Python, HTTP calls mocked
+#   integration  The SQL in include/sql/ against a real Postgres (service
+#                container): the table can be created every hour, and the
+#                upsert never stores a reading twice
+#   dags         The DAG inside the Airflow image (astro dev parse / pytest):
+#                it imports, and has the right tasks, schedule, retries and
+#                SQL files
+#
+# CI never calls LibreLinkUp or touches real glucose data: only fixture
+# readings and throwaway databases, so it needs no secrets.
+
 name: CI
 
-on: 
+on:
     push:
         branches: [main]
     pull_request:
