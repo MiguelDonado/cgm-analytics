@@ -97,4 +97,34 @@ git push origin main
 CI still runs (the workflow triggers on push to `main`), but only once the code
 is already there; a failure is fixed with another commit. PRs are worth it for
 **branch protection** (`main` only accepts PRs with passing CI) and to keep a
-visible history of each change.
+visible history of each change. With the ruleset below, `git push origin main`
+is rejected, so the PR is the only way in.
+
+## Branch protection
+
+Without it, CI only **reports** a ✗: a broken PR can still be merged, and a
+commit can still go straight to `main`. A **ruleset** on GitHub makes `main`
+enforce the PR flow. It's a repo setting, not a file in the repo:
+**Settings → Rules → Rulesets**, ruleset `main`, targeting the default branch.
+
+| Rule | Effect |
+|---|---|
+| Restrict deletions | `main` can't be deleted |
+| Block force pushes | `main`'s history can't be rewritten (`git push --force`) |
+| Require a pull request, **0** approvals | Every change goes through a PR; 0 because GitHub doesn't let you approve your own PR, so 1 would block every merge |
+| Require status checks: `test`, `integration`, `dags` | The **Merge** button stays disabled until the three CI jobs (named as in `ci.yml`) pass |
+
+- **Bypass list empty**: the rules apply to the repo owner too.
+- **Tags aren't affected**: the ruleset only targets `main`, so
+  `git push origin v0.2.0` still works and triggers the publish workflow.
+- **Renaming or adding a CI job** means updating the required checks: a
+  required check that never runs keeps the PR waiting forever.
+
+A direct push now fails with `Changes must be made through a pull request`.
+If a commit lands on local `main` by mistake, move it to a branch and put
+`main` back where GitHub's is (no files change):
+
+```bash
+git switch -c fix/something        # the branch takes the commit
+git branch -f main origin/main     # main back to GitHub's version
+```

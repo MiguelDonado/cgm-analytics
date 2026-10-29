@@ -1,0 +1,59 @@
+# Daily check that the LibreLinkUp API still works: a real login, patient
+# lookup and graph fetch, the same calls as the fetch_glucose DAG (see
+# docs/ci-cd.md). The API is unofficial, so Abbott can change it at any time;
+# this finds out within a day, instead of when the dashboard runs out of data.
+#
+# Unlike ci.yml, it talks to the real API with the AIRFLOW_CONN_LIBRELINKUP
+# secret. It prints only the number of readings, never the readings themselves.
+#
+# GitHub emails the repo owner when a scheduled run fails.
+
+name: API check
+
+on:
+    # Every day at 06:23 UTC. 
+    # Github recommends not to run it at perfect round hours
+    # because there is more workload for Github, and jobs may be delayed or dropped
+    schedule:
+        - cron: "23 6 * * *"
+    
+    # "Run workflow" button in the Actions tab, to test it or check by hand
+    # The ":" is needed to make it valid YAML
+    workflow_dispatch:
+
+    # PRs that change the login code or the test itself or this YML file
+    pull_requests:
+        paths:
+            - src/cgm_analytics/main.py
+            - tests/smoke/**
+            - .github/workflows/api-check.yml
+    
+    # Only needs to read the repo
+    permissions:
+        contents: read
+
+    jobs:
+        librelinkup:
+            runs-on: ubuntu-latest
+            # Login normally takes seconds; dont let a hung request run for 6 hours
+
+            timeout-minutes: 5
+            steps:
+                # Copy our repo into the runner (fresh venv)
+                - uses: actions/checkout@v4
+
+                # Install uv and caches downloaded packages between runs
+                - uses: astral-sh/setup-uv@v6
+                  with:
+                    enable-cache: true
+                
+                - name: Install dependencies
+                  run: uv sync --locked
+
+                # The secret becomes an environment variable, as source .env does locally
+                - name: Run API smoke test
+                  env: 
+                    AIRFLOW_CONN_LIBRELINKUP: ${{ secrets.AIRFLOW_CONN_LIBRELINKUP }}
+                  # -v: verbose
+                  # -s: allow the test to print
+                  run: uv run pytest tests/smoke -v -s
