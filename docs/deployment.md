@@ -8,6 +8,9 @@ move to the cloud:
 Laptop (Airflow, when it's on)  ──writes──▶  Neon (Postgres)  ◀──reads──  Shiny host  ◀──  browser
 ```
 
+**Live dashboard:**
+https://01a1877e-e313-43cc-1175-1692af9db78a.share.connect.posit.cloud/
+
 ## The database: Neon
 
 The local `cgm-db` container only exists on the laptop, so a dashboard hosted
@@ -105,12 +108,13 @@ commented out as a fallback:
 ```bash
 # Local cgm-db (before Neon)
 # AIRFLOW_CONN_CGM_DB='postgresql://cgm:<local-password>@cgm-db:5432/'
-AIRFLOW_CONN_CGM_DB='postgresql://neondb_owner:<neon-password>@<neon-host>:5432/cgm?sslmode=require'
+AIRFLOW_CONN_CGM_DB='postgresql://cgm_owner:<neon-password>@<neon-host>:5432/cgm?sslmode=require'
 ```
 
 - Host: the Docker container name `cgm-db` becomes Neon's
   `ep-...eu-central-1.aws.neon.tech`. User and password come from the Neon
-  connection string.
+  connection string. Neon names the owner after the database: `cgm_owner` for
+  `cgm`.
 - Anything after `?` becomes the connection's **extra** field, and
   `PostgresHook` passes `sslmode=require` on to the driver, so the connection
   is encrypted.
@@ -152,12 +156,17 @@ gets the same values as Airflow's URI, one per variable:
 CGM_DB_HOST=<neon-host>
 CGM_DB_PORT=5432
 CGM_DB_NAME=cgm
-CGM_DB_USER=neondb_owner
+CGM_DB_USER=cgm_owner
 CGM_DB_PASSWORD=<neon-password>
 ```
 
 After `astro dev restart`, http://localhost:3838 shows today's readings, which
 now only exist in Neon. The local `cgm-db` no longer receives new data.
+
+`dashboard/.Renviron` is a separate file, read by R when the app runs from
+RStudio instead of Docker (see `r-dashboard.md`). It still points at the local
+`cgm-db` (`localhost:5433`) unless it gets the same Neon values; R only reads it
+on startup, so restart the R session after changing it.
 
 ## The dashboard: Posit Connect Cloud
 
@@ -200,6 +209,81 @@ GitHub repo (main)  →  Connect Cloud: read manifest.json  →  install R + pac
 3. It starts `app.R`, with the `CGM_DB_*` secrets set as environment variables,
    so `db.R` connects to Neon exactly as it does locally from `dashboard/.env`.
 
+Posit doesn't document the internals in detail; what follows is how platforms
+like this work in general, and it matches what Connect Cloud does from the
+outside.
+
+**Compute only, no storage.** Connect Cloud runs the app, most likely in a
+container on shared cloud servers rather than a dedicated VM. All the data lives
+in Neon; the app only reads it.
+
+It stores **the app**, but not **data the app creates while running**:
+
+| | Kept by Connect Cloud? |
+|---|---|
+| Code, built environment (R + packages), settings, secrets | **Yes**: what it needs to restart the app at any time |
+| Files the app writes while running (a CSV, a SQLite file, uploads) | **No**: on the container's temporary disk, gone when it sleeps or restarts |
+
+Anything that must persist goes to an external service: a database like Neon,
+or object storage like S3. So splitting Neon (storage) and Connect Cloud
+(compute) is the intended pattern, not a workaround. (Self-hosted Posit
+Connect, by contrast, keeps app folders on a real server, so files written
+there can survive restarts.)
+
+The dashboard only reads, so this costs nothing today. 
+
+**Build once, run many times.** Packages aren't installed on every start:
+
+```
+BUILD (once per publish)                          RUN (every time the app wakes up)
+clone repo → read manifest.json →                start from that ready environment →
+install R + packages → save the result            run app.R → connect to Neon
+        (slow: minutes)                                  (fast: seconds)
+```
+
+The same split as `docker build` (install everything once, produce an image)
+and `docker run` (just start it). That's why the first publish took minutes and
+waking the app takes seconds.
+
+**Packages are built in, secrets are not.** The built environment contains R,
+the packages and the code. The `CGM_DB_*` secrets are passed in as environment
+variables when the app **starts**, like the dashboard service in
+`docker-compose.override.yml`:
+
+```yaml
+dashboard:
+  image: migueldonado/cgm-dashboard:0.1.0   # built once: R + packages + code, no secrets
+  env_file:
+    - ./dashboard/.env                      # added at start: CGM_DB_*
+```
+
+- **Security:** a built image gets stored, cached and copied, and anything baked
+  into it travels with it. The same reason `.dockerignore` excludes `.env` and
+  `.Renviron` from the Docker Hub image.
+- **Flexibility:** a new Neon password only means updating the variable and
+  restarting the app, without reinstalling every package.
+
+**Stateless.** When the app sleeps, its container is stopped and its local files
+are discarded; on wake-up a fresh one starts from the built environment.
+Anything the app wrote to its own disk would be lost. The dashboard only reads
+from Neon, so it loses nothing: the same design as Neon's compute, which can be
+thrown away because the data lives somewhere else.
+
+**One R process, one session per visitor.** Opening the URL opens a WebSocket
+from the browser to the running R process, and Shiny creates a **session** for
+that visitor. Two people at the same time get two sessions in the same process,
+each running its own queries against Neon.
+
+The full chain:
+
+```
+browser ──WebSocket──▶ Connect Cloud (R + packages, app.R) ──SQL over SSL──▶ Neon compute ──▶ Neon storage
+                       stateless, sleeps when idle                           sleeps when idle   always on
+```
+
+The two sleeping layers are why the first visit after a while is slow: both
+have to wake up.
+
 ### `manifest.json`
 
 The manifest is to Connect Cloud what the Dockerfile is to Docker Hub: the
@@ -223,3 +307,71 @@ rsconnect::writeManifest(appFiles = c("app.R", "R/db.R", "R/metrics.R"))
 **Run it again whenever the dashboard's packages change** and commit the new
 manifest. Otherwise Connect Cloud won't install the new package and the app
 fails with `there is no package called ...`.
+
+### Publishing
+
+The manifest was merged into `main` first: Connect Cloud reads the app from
+GitHub, not from the laptop.
+
+> **Posit Cloud ≠ Posit Connect Cloud.** posit.cloud is RStudio in the browser,
+> for *writing* code: its "New project from GitHub repo" clones the repo into an
+> online RStudio. Hosting is **connect.posit.cloud**.
+
+On connect.posit.cloud, signed in with GitHub (access granted to the
+`cgm-analytics` repo only):
+
+1. **Publish** → **Shiny**.
+2. Repository `MiguelDonado/cgm-analytics`, branch `main`, primary file
+   `dashboard/app.R`. The app lives in a subfolder; Connect Cloud finds
+   `manifest.json` next to it.
+3. **Variables:** the five `CGM_DB_*` values, copied from `dashboard/.env`
+   (already proven to work against Neon):
+
+   ```
+   CGM_DB_HOST      <neon-host>
+   CGM_DB_PORT      5432
+   CGM_DB_NAME      cgm
+   CGM_DB_USER      cgm_owner
+   CGM_DB_PASSWORD  <neon-password>
+   ```
+
+4. **Publish.** The first build takes several minutes: it installs R and every
+   package in the manifest.
+
+**Where the secrets live:** in Connect Cloud, not in GitHub. Connect Cloud is
+what runs `app.R`, so it's the one that sets the environment variables `db.R`
+reads. GitHub secrets are only visible to GitHub Actions workflows (like
+`DOCKERHUB_TOKEN` in `publish.yml`); Connect Cloud only clones the code and
+never sees them.
+
+## Where Docker fits
+
+Neither part of this deployment needed a Docker image: Neon runs Postgres for
+us, and Connect Cloud builds the app's environment from `manifest.json`. That
+doesn't make Docker unimportant in production; these are **managed
+platforms**, which do the container part themselves.
+
+| | Managed platform (used here) | Running the infrastructure yourself |
+|---|---|---|
+| You provide | Code + a dependency list (`manifest.json`) | A Docker image |
+| Who builds the container | The platform | You (`docker build`, as in `publish.yml`) |
+| Examples | Connect Cloud, shinyapps.io, Heroku, Neon, Supabase | A VPS, Kubernetes, Google Cloud Run, AWS ECS, Fly.io |
+| Trade-off | Easy, but only what the platform supports | More work, but anything runs anywhere |
+
+**When Docker is needed:**
+
+- **The platform doesn't support the stack.** Connect Cloud runs Shiny,
+  Quarto, Streamlit and similar, but not Airflow. Moving Airflow off the laptop
+  would mean containers (Astro's images, Kubernetes).
+- **System dependencies.** If a package needs a system library the platform
+  doesn't provide, a Dockerfile can install it.
+- **Moving between platforms.** `migueldonado/cgm-dashboard` runs the same on
+  the laptop, a VPS or Cloud Run; `manifest.json` only works on Posit's
+  products. So the Docker Hub image stays useful as the portable version of the
+  dashboard.
+- **Local development.** Astro, `cgm-db` and the dashboard all run as
+  containers on the laptop: a small copy of production.
+
+In industry both are common: managed platforms (Posit Connect, Databricks,
+SageMaker) for apps and models, where Docker is hidden, and Docker plus
+Kubernetes for pipelines and APIs, where you write the Dockerfile.
