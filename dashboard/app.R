@@ -119,15 +119,11 @@ server <- function(input, output, session) {
   }, ignoreNULL = FALSE)
   
   # Step 4
-  # Create cgm reactive expression
-  cgm <- reactive(to_iglu(filtered()))
-  
-  # Step 5
   # Update AGP plot in the UI
   output$agp_plot <- renderPlot({
     n_days <- length(unique(filtered()$date))
     validate(need(n_days >= 1, paste("The AGP needs at least 1 day of data, the selected range has", n_days)))
-    agp(cgm(), tz = "Europe/Madrid")
+    agp(to_iglu(filtered()), tz = "Europe/Madrid")
   })
 }
 
