@@ -158,3 +158,68 @@ CGM_DB_PASSWORD=<neon-password>
 
 After `astro dev restart`, http://localhost:3838 shows today's readings, which
 now only exist in Neon. The local `cgm-db` no longer receives new data.
+
+## The dashboard: Posit Connect Cloud
+
+The dashboard is hosted on [Posit Connect Cloud](https://connect.posit.cloud),
+Posit's hosting service for Shiny apps. The alternative was shinyapps.io:
+
+| | Connect Cloud | shinyapps.io |
+|---|---|---|
+| Deploys from | The GitHub repo (repo, branch, file) | The laptop, with `rsconnect::deployApp()` |
+| Updates | Can republish on every push to `main` | Run `deployApp()` again by hand |
+| Secrets (`CGM_DB_*`) | Entered in a web form, never in the repo | Usually shipped as a `.Renviron` file with the app |
+
+**Why Connect Cloud:**
+
+- **It fits the existing workflow.** Changes already go through PRs and CI;
+  with Connect Cloud, merging into `main` also updates the live dashboard. That
+  is **continuous deployment**, the step `ci-cd.md` lists as not used.
+- **Secrets stay out of the code**, entered once in the Connect Cloud UI, the
+  same idea as GitHub Actions secrets.
+- **Free plan** for apps deployed from a public GitHub repo, with a monthly
+  usage limit (see their pricing page). The app sleeps when idle, so a few
+  minutes a night is well within it.
+
+The app has no login for now: anyone with the URL can open it.
+
+### How it works
+
+Connect Cloud doesn't use the Dockerfile or the Docker Hub image. It builds the
+app from the repo:
+
+```
+GitHub repo (main)  →  Connect Cloud: read manifest.json  →  install R + packages  →  run app.R
+                                                                                      ↑
+                                                         CGM_DB_* secrets as env vars ┘
+```
+
+1. It clones the repo at the chosen branch.
+2. It reads `dashboard/manifest.json` to know which R version and which exact
+   package versions to install.
+3. It starts `app.R`, with the `CGM_DB_*` secrets set as environment variables,
+   so `db.R` connects to Neon exactly as it does locally from `dashboard/.env`.
+
+### `manifest.json`
+
+The manifest is to Connect Cloud what the Dockerfile is to Docker Hub: the
+recipe for the app's environment. It's generated from the `renv` project, in
+the R console with the dashboard project open:
+
+```r
+renv::install("rsconnect")
+rsconnect::writeManifest(appFiles = c("app.R", "R/db.R", "R/metrics.R"))
+```
+
+- `rsconnect` is Posit's deployment package; it writes the manifest.
+- `writeManifest()` finds the packages the app uses, records their exact
+  versions and the R version, and lists the app's files with a checksum each.
+- `appFiles` limits that list to the files the app needs. Without it, every file
+  in the folder was listed, including `.env`, `.Renviron` and `.Rprofile`. Only
+  checksums are stored, so no password leaked, but those files aren't on GitHub
+  (git-ignored), and `.Rprofile` starts `renv`, which can conflict with how
+  Connect Cloud installs packages. rsconnect adds `renv.lock` on its own.
+
+**Run it again whenever the dashboard's packages change** and commit the new
+manifest. Otherwise Connect Cloud won't install the new package and the app
+fails with `there is no package called ...`.
