@@ -1,5 +1,9 @@
 # CGM Analytics: from sensor readings to a daily glucose dashboard
 
+
+[![CI](https://github.com/MiguelDonado/cgm-analytics/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MiguelDonado/cgm-analytics/actions/workflows/ci.yml)
+[![API check](https://github.com/MiguelDonado/cgm-analytics/actions/workflows/api-check.yml/badge.svg?branch=main)](https://github.com/MiguelDonado/cgm-analytics/actions/workflows/api-check.yml)
+
 A personal project to learn Airflow while building something useful at the same
 time.
 
