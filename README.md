@@ -25,9 +25,10 @@ database wake up)
 ## 🎥 Video Tutorials
 
 > [!IMPORTANT]
-> **Watch these videos before using the application.**
-> - **Developer walkthrough**: how the code works.
-> - **User guide**: how to set up and use the application.
+> **Watch this video before using the application.** It walks through the
+> project and how the code works.
+>
+> 1. ▶️ **[Project walkthrough](https://youtu.be/Pye3UpSBi3c)**
 
 ---
 
@@ -162,8 +163,8 @@ selected days onto a single 24-hour day and shows, for each time of day:
 This shows the profile of a typical day: when glucose tends to run high or low,
 and how consistent each time of day is.
 
-**3. Daily profiles**: the glucose of each individual day (up to the last 14
-days of the selected range), to spot specific days that went wrong.
+**3. Daily profiles**: the glucose of each individual day in the selected
+range, to spot specific days that went wrong.
 
 This report is enough for a quick, useful review of my glucose. I left out
 other metrics on purpose, because most of them are redundant and add little new
@@ -216,20 +217,38 @@ Details in [`docs/ci-cd.md`](docs/ci-cd.md).
 
 ## Getting Started
 
+The project can run in two ways. The code is the same in both. Only the
+connection settings in the env files change:
+
+| | Cloud (the live setup) | Local |
+|---|---|---|
+| Airflow | Laptop | Laptop |
+| Database | Neon | `cgm-db` container on the laptop |
+| Dashboard | Posit Connect Cloud: a web page, from any browser | <http://localhost:3838>|
+
+The local setup needs no accounts besides LibreLinkUp, so it's the quickest
+way to try the project.
+
 ### Prerequisites
 
-- **[Docker](https://docs.docker.com/get-docker/)**: every part of the project
-  runs in containers.
+- **[Docker](https://docs.docker.com/get-docker/)**: Airflow, the local
+  database and the local dashboard run in containers.
 - **[Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli)**: runs
   Airflow locally. No Astronomer account is needed.
-- **A LibreLinkUp follower account.** In the FreeStyle LibreLink app, go to
+- **Freestyle Libre 2 sensor**
+- **Freestyle LibreLink app and account**
+- **LibreLinkUp follower account.**: in the FreeStyle LibreLink app, go to
   **Connected Apps → LibreLinkUp** and invite an email address. Create a
   LibreLinkUp account with that email and accept the invitation. The project
-  logs in with this account to read the readings.
+  logs in with this account to read the readings. To make it crystal clear, the mail and password you used in LibreLinkUp will be the ones you must use in `.env` file.
+- **Cloud setup only:** a [Neon](https://neon.tech) account and a
+  [Posit Connect Cloud](https://connect.posit.cloud) account (sign in with
+  GitHub). Both have free plans. Connect Cloud deploys from a GitHub repo, so
+  fork this one.
 
 ### Setup
 
-1. **Clone the repository:**
+1. **Clone the repository** (or your fork):
 
    ```bash
    git clone https://github.com/MiguelDonado/cgm-analytics.git
@@ -245,18 +264,14 @@ Details in [`docs/ci-cd.md`](docs/ci-cd.md).
    cp dashboard/.env.example dashboard/.env
    ```
 
-   Then fill them in:
+   You need all three in both setups. `astro dev start` always starts the
+   `cgm-db` and `dashboard` containers, and it fails if `cgm-db.env` or
+   `dashboard/.env` is missing, because `docker-compose.override.yml` reads
+   them with `env_file`.
 
-   | File | Used by | What to set |
-   |---|---|---|
-   | `cgm-db.env` | The glucose database | `POSTGRES_PASSWORD`: choose a password |
-   | `.env` | Airflow | The same password in `AIRFLOW_CONN_CGM_DB`, and your LibreLinkUp email and password in `AIRFLOW_CONN_LIBRELINKUP` |
-   | `dashboard/.env` | The dashboard | The same password in `CGM_DB_PASSWORD` |
+3. **Point them at a database**, following **one** of the two options below.
 
-   `astro dev start` fails if `cgm-db.env` or `dashboard/.env` is missing,
-   because `docker-compose.override.yml` reads them with `env_file`.
-
-3. **Start everything:**
+4. **Start everything:**
 
    ```bash
    astro dev start
@@ -265,32 +280,79 @@ Details in [`docs/ci-cd.md`](docs/ci-cd.md).
    The first start pulls the dashboard image from
    [Docker Hub](https://hub.docker.com/r/migueldonado/cgm-dashboard).
 
+#### Option A: local database
+
+| File | Used by | What to set |
+|---|---|---|
+| `cgm-db.env` | The `cgm-db` container | `POSTGRES_PASSWORD`: choose a password |
+| `.env` | Airflow | The same password in `AIRFLOW_CONN_CGM_DB` (host `cgm-db`, as in the template), and your LibreLinkUp email and password in `AIRFLOW_CONN_LIBRELINKUP` |
+| `dashboard/.env` | The dashboard container | The same password in `CGM_DB_PASSWORD` (host `cgm-db`, as in the template) |
+| `dashboard/.Renviron` | R, when running the app from RStudio (optional) | The values below |
+
+`dashboard/.Renviron` has no template. Create it only if you want to run the
+app from RStudio instead of Docker. R runs on the host, so it connects through
+the port published on the host instead of the Docker network:
+
+```bash
+CGM_DB_HOST=localhost
+CGM_DB_PORT=5433
+CGM_DB_NAME=cgm
+CGM_DB_USER=cgm
+CGM_DB_PASSWORD=<the same password>
+```
+
+#### Option B: cloud database (Neon) and dashboard (Connect Cloud)
+
+1. **Create a Neon project** with Postgres 17. Copy the connection string from
+   the **Connect** button. It contains the host, user and password used below.
+
+2. **Fill in the env files** with the Neon values:
+
+   | File | Used by | What to set |
+   |---|---|---|
+   | `.env` | Airflow | `AIRFLOW_CONN_CGM_DB='postgresql://<neon-user>:<neon-password>@<neon-host>:5432/<db>?sslmode=require'`, and your LibreLinkUp account in `AIRFLOW_CONN_LIBRELINKUP` |
+   | `dashboard/.env` | The local dashboard container | `CGM_DB_HOST`, `CGM_DB_USER`, `CGM_DB_PASSWORD` and `CGM_DB_NAME` from Neon, port `5432` |
+   | `dashboard/.Renviron` | RStudio (optional) | The same values as `dashboard/.env` |
+   | `cgm-db.env` | The `cgm-db` container | Any password. The container still starts, but nothing uses it |
+
+3. **Publish the dashboard** on Connect Cloud: **Publish → Shiny**, your fork,
+   branch `main`, primary file `dashboard/app.R`. Under **Variables**, add the
+   five `CGM_DB_*` values from `dashboard/.env`. The first build takes a few
+   minutes.
+
+Details, and how to copy readings from a local database into Neon, are in
+[`docs/deployment.md`](docs/deployment.md).
+
+To switch from one setup to the other later, change the env files, then run
+`astro dev restart`. For `.Renviron`, also restart the R session. The readings
+stay in the old database. They are not moved.
+
 ### First run
 
 1. **Load the first readings.** Open the Airflow UI at
    <http://localhost:8080>, switch on the `fetch_glucose` DAG and click
-   **Trigger**. From then on it runs every hour on its own.
+   **Trigger**. The first run creates the table. From then on, the DAG runs
+   every hour on its own.
 
    LibreLinkUp only returns about the **last 12 hours** of readings, so the
    history starts the day you set this up. Readings older than that can't be
-   recovered, so keep the project running.
+   recovered, so keep Airflow running.
 
-2. **Open the dashboard** at <http://localhost:3838>. It picks up new
-   readings on its own, within 5 minutes of each DAG run.
 
 ### After changing the code
 
-| What changed | Command |
+| What changed | What to do |
 |---|---|
 | The pipeline (`dags/`, `src/`, `include/`, `requirements.txt`) | `astro dev restart` |
-| The dashboard (`dashboard/`) | `docker build -t migueldonado/cgm-dashboard:0.1.0 dashboard && astro dev restart` |
+| The dashboard, cloud | Merge into `main`. Connect Cloud republishes on its own. If the R packages changed, regenerate `dashboard/manifest.json` first (see [`docs/deployment.md`](docs/deployment.md#manifestjson)) |
+| The dashboard, local container | `docker build -t migueldonado/cgm-dashboard:0.1.0 dashboard && astro dev restart` |
 
-A local build of the dashboard replaces the published image of the same tag on
-this machine, so `astro dev restart` runs your changes.
+A local build of the dashboard replaces the published image with the same tag
+on this machine, so `astro dev restart` runs your changes.
 
-`astro dev stop` stops all the containers, and the readings are kept. Avoid
-`astro dev kill`, because it most likely deletes the database volume along with
-all the readings.
+`astro dev stop` stops all the containers, and the readings are kept. In the
+local setup, avoid `astro dev kill`. It most likely deletes the database volume
+along with all the readings. Neon isn't affected.
 
 ---
 
