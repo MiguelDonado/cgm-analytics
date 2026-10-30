@@ -344,6 +344,34 @@ reads. GitHub secrets are only visible to GitHub Actions workflows (like
 `DOCKERHUB_TOKEN` in `publish.yml`); Connect Cloud only clones the code and
 never sees them.
 
+## Airflow: why it stays on the laptop
+
+The database and the dashboard moved to the cloud for free. Airflow didn't,
+and the reason is the **scheduler**.
+
+The scheduler is a process that never stops: it keeps checking whether a DAG
+is due and starts it. If it isn't running, nothing runs at 10:00, even though
+the DAG says hourly. So Airflow needs a machine that is **on 24/7**, a VM, even
+though `fetch_glucose` only works for a few seconds per hour.
+
+That rules out the platforms used for the rest of the project:
+
+- **Managed platforms** like Connect Cloud only run web apps (Shiny,
+  Streamlit...), not Airflow.
+- **Serverless** (AWS Lambda, Azure Functions, Google Cloud Run Jobs) starts
+  a container when something triggers it, runs the code for a few seconds or
+  minutes and throws the container away. That suits a short job, not a process
+  that must stay alive.
+
+**The options for a VM** (prices and plans at the time of writing):
+
+| Option | Cost | Card needed |
+|---|---|---|
+| Oracle Cloud Always Free (ARM VM, up to 4 CPUs / 24 GB) | Free, no time limit | Yes, a **debit** card for identity verification |
+| Google Cloud / AWS / Azure free tiers | Free, small VMs (1 GB, too little for Astro) | Yes |
+| Cheap VPS (Hetzner, Contabo, Netcup) | ~€5–8/month for 8 GB | Card or PayPal |
+
+
 ## Where Docker fits
 
 Neither part of this deployment needed a Docker image: Neon runs Postgres for

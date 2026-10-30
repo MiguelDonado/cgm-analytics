@@ -123,7 +123,7 @@ The project has three parts:
    readings from LibreLinkUp using the `pylibrelinkup` library, transforms them
    and loads them into a PostgreSQL database.
 2. **Data analysis**: the readings are analyzed in R with the `iglu` package
-   (summary metrics and the AGP).
+   (the AGP report, which includes the summary metrics).
 3. **Web application**: a Shiny app turns the analysis into an interactive,
    data-driven dashboard.
 
@@ -135,8 +135,11 @@ The project has three parts:
 
 ## Data analysis
 
-There are many ways to analyze CGM data. This project uses the most common
-summary metrics:
+There are many ways to analyze CGM data. The dashboard shows a single view: the
+**AGP report** (Ambulatory Glucose Profile), the standard one-page summary of
+CGM data, made with `iglu::agp()` for the selected dates. It has three parts.
+
+**1. Summary metrics**, the most common ones:
 
 - **Time in ranges**: percentage of readings in each glucose range. The main
   one is **time in range (TIR)**, between 70 and 180 mg/dL; the others show
@@ -148,28 +151,26 @@ summary metrics:
 - **GMI** (Glucose Management Indicator): an estimate of HbA1c computed from
   the average glucose.
 
-Summary metrics are useful, but they compress weeks of data into a single
-number and lose a lot of information. That's why this project also uses the
-**AGP** (Ambulatory Glucose Profile).
-
-The AGP stacks all the selected days onto a single 24-hour day and shows, for
-each time of day:
+**2. The AGP.** Summary metrics are useful, but they compress weeks of data
+into a single number and lose a lot of information. The AGP stacks all the
+selected days onto a single 24-hour day and shows, for each time of day:
 
 - the **median** (50th percentile),
 - the **25th–75th percentiles** (the darker band, where half the readings fall),
 - the **5th–95th percentiles** (the outer band).
 
 This shows the profile of a typical day: when glucose tends to run high or low,
-and how consistent each time of day is. Below the AGP, the dashboard also shows
-the glucose of each individual day (up to the last 14 days of the selected
-range), to spot specific days that went wrong.
+and how consistent each time of day is.
 
-These metrics and the AGP are enough for a quick, useful review of my glucose.
-I left out other metrics on purpose, because most of them are redundant and add
-little new information. This is how they look in the dashboard:
+**3. Daily profiles**: the glucose of each individual day (up to the last 14
+days of the selected range), to spot specific days that went wrong.
+
+This report is enough for a quick, useful review of my glucose. I left out
+other metrics on purpose, because most of them are redundant and add little new
+information. This is how it looks in the dashboard:
 
 <p align="center">
-  <img src="assets/screenshot_dashboard.png" alt="CGM dashboard showing tn ranges, the AGP and the daily profiles" width="800">
+  <img src="assets/screenshot_dashboard.png" alt="CGM dashboard showing the AGP report: time in ranges, glucose statistics, the AGP and the daily profiles" width="800">
 </p>
 
 ---
@@ -296,7 +297,7 @@ all the readings.
 ## References
 
 - [iglu](https://github.com/irinagain/iglu): R package for analyzing CGM data,
-  used for the summary metrics and the AGP. Released under the GPL-2 license.
+  used for the AGP report. Released under the GPL-2 license.
   > Broll S, Urbanek J, Buchanan D, Chun E, Muschelli J, Punjabi N and
   > Gaynanova I (2021). Interpreting blood glucose data with R package iglu.
   > *PLoS One*, 16(4), e0248560.
