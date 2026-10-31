@@ -344,6 +344,17 @@ reads. GitHub secrets are only visible to GitHub Actions workflows (like
 `DOCKERHUB_TOKEN` in `publish.yml`); Connect Cloud only clones the code and
 never sees them.
 
+## Making changes
+
+| What changed | What to do |
+|---|---|
+| The pipeline (`dags/`, `src/`, `include/`, `requirements.txt`) | `astro dev restart` |
+| The dashboard, cloud | Merge into `main`. Connect Cloud republishes on its own. If the R packages changed, regenerate `dashboard/manifest.json` first (see [`manifest.json`](#manifestjson)) |
+| The dashboard, local container | `docker build -t migueldonado/cgm-dashboard:0.1.0 dashboard && astro dev restart` |
+
+A local build of the dashboard replaces the published image with the same tag
+on this machine, so `astro dev restart` runs your changes.
+
 ## Airflow: why it stays on the laptop
 
 The database and the dashboard moved to the cloud for free. Airflow didn't,

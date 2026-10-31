@@ -52,8 +52,6 @@ database wake up)
     - [Setup](#setup)
       - [Option A: local database](#option-a-local-database)
       - [Option B: cloud database (Neon) and dashboard (Connect Cloud)](#option-b-cloud-database-neon-and-dashboard-connect-cloud)
-    - [First run](#first-run)
-    - [After changing the code](#after-changing-the-code)
   - [References](#references)
   - [License](#license)
 
@@ -292,6 +290,28 @@ way to try the project.
    The first start pulls the dashboard image from
    [Docker Hub](https://hub.docker.com/r/migueldonado/cgm-dashboard).
 
+5. **Load the first readings.** Open the Airflow UI at
+   <http://localhost:8080>, switch on the `fetch_glucose` DAG and click
+   **Trigger**. The first run creates the table. From then on, the DAG runs
+   every hour on its own. LibreLinkUp only returns about the **last 12 hours**
+   of readings, so the history starts the day you set this up. Keep Airflow
+   running.
+
+6. **Open the dashboard** at <http://localhost:3838> (or your Connect Cloud
+   URL).
+
+   > [!WARNING]
+   > The AGP report only works once there are **more than 24 hours** of
+   > readings in the database. Until then the dashboard can't build it, so
+   > leave the DAG running for at least a day before checking it.
+
+> `astro dev stop` stops the containers and keeps the readings. In the local
+> setup, avoid `astro dev kill`: it can delete the database volume, readings
+> included.
+
+To update the pipeline or the dashboard after changing the code, see
+[`docs/deployment.md`](docs/deployment.md#making-changes).
+
 #### Option A: local database
 
 | File | Used by | What to set |
@@ -338,40 +358,6 @@ Details, and how to copy readings from a local database into Neon, are in
 To switch from one setup to the other later, change the env files, then run
 `astro dev restart`. For `.Renviron`, also restart the R session. The readings
 stay in the old database. They are not moved.
-
-### First run
-
-1. **Load the first readings.** Open the Airflow UI at
-   <http://localhost:8080>, switch on the `fetch_glucose` DAG and click
-   **Trigger**. The first run creates the table. From then on, the DAG runs
-   every hour on its own.
-
-   LibreLinkUp only returns about the **last 12 hours** of readings, so the
-   history starts the day you set this up. Readings older than that can't be
-   recovered, so keep Airflow running.
-
-2. **Open the dashboard** at <http://localhost:3838> (or your Connect Cloud
-   URL).
-
-   > [!WARNING]
-   > The AGP report only works once there are **more than 24 hours** of
-   > readings in the database. Until then the dashboard can't build it, so
-   > leave the DAG running for at least a day before checking it.
-
-### After changing the code
-
-| What changed | What to do |
-|---|---|
-| The pipeline (`dags/`, `src/`, `include/`, `requirements.txt`) | `astro dev restart` |
-| The dashboard, cloud | Merge into `main`. Connect Cloud republishes on its own. If the R packages changed, regenerate `dashboard/manifest.json` first (see [`docs/deployment.md`](docs/deployment.md#manifestjson)) |
-| The dashboard, local container | `docker build -t migueldonado/cgm-dashboard:0.1.0 dashboard && astro dev restart` |
-
-A local build of the dashboard replaces the published image with the same tag
-on this machine, so `astro dev restart` runs your changes.
-
-`astro dev stop` stops all the containers, and the readings are kept. In the
-local setup, avoid `astro dev kill`. It most likely deletes the database volume
-along with all the readings. Neon isn't affected.
 
 ---
 
