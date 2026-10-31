@@ -29,4 +29,5 @@ logs/
 # Assets
 *.kdenlive
 Rplots.pdf
-*walkthrough.mp4
+*.mp4
+*.mkv

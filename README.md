@@ -29,6 +29,8 @@ database wake up)
 > project and how the code works.
 >
 > 1. ▶️ **[Project walkthrough](https://youtu.be/Pye3UpSBi3c)**
+> 2. ▶️ **[Local setup](https://youtu.be/_EkytPnGkLo)**: step by step guide to
+>    run the project on your own machine
 
 ---
 
@@ -48,6 +50,8 @@ database wake up)
   - [Getting Started](#getting-started)
     - [Prerequisites](#prerequisites)
     - [Setup](#setup)
+      - [Option A: local database](#option-a-local-database)
+      - [Option B: cloud database (Neon) and dashboard (Connect Cloud)](#option-b-cloud-database-neon-and-dashboard-connect-cloud)
     - [First run](#first-run)
     - [After changing the code](#after-changing-the-code)
   - [References](#references)
@@ -229,10 +233,18 @@ connection settings in the env files change:
 The local setup needs no accounts besides LibreLinkUp, so it's the quickest
 way to try the project.
 
+> [!TIP]
+> Instead of following the steps below, you can follow the
+> **[local setup video](https://youtu.be/_EkytPnGkLo)**, which goes through
+> the whole process.
+
 ### Prerequisites
 
 - **[Docker](https://docs.docker.com/get-docker/)**: Airflow, the local
-  database and the local dashboard run in containers.
+  database and the local dashboard run in containers. On Linux, remember to
+  add your user to the `docker` group after installing it.
+
+  Then log out and back in (or restart) for the change to take effect.
 - **[Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli)**: runs
   Airflow locally. No Astronomer account is needed.
 - **Freestyle Libre 2 sensor**
@@ -259,8 +271,8 @@ way to try the project.
    git. Copy the templates:
 
    ```bash
-   cp .env.example .env
    cp cgm-db.env.example cgm-db.env
+   cp .env.example .env
    cp dashboard/.env.example dashboard/.env
    ```
 
@@ -338,6 +350,13 @@ stay in the old database. They are not moved.
    history starts the day you set this up. Readings older than that can't be
    recovered, so keep Airflow running.
 
+2. **Open the dashboard** at <http://localhost:3838> (or your Connect Cloud
+   URL).
+
+   > [!WARNING]
+   > The AGP report only works once there are **more than 24 hours** of
+   > readings in the database. Until then the dashboard can't build it, so
+   > leave the DAG running for at least a day before checking it.
 
 ### After changing the code
 
